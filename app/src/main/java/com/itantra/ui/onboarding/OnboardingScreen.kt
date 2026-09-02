@@ -36,7 +36,7 @@ fun OnboardingScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBg)
+            .background(SurfaceBg)
             .padding(24.dp)
     ) {
         Column(
@@ -63,7 +63,7 @@ fun OnboardingScreen(
                 Icon(
                     imageVector = Icons.Default.Sensors,
                     contentDescription = "iTantra Logo",
-                    tint = DarkBg,
+                    tint = SurfaceBg,
                     modifier = Modifier.size(44.dp)
                 )
             }
@@ -78,7 +78,7 @@ fun OnboardingScreen(
                 Text(
                     text = "Indian Multilingual Neural Transceiver",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = AccentSaffronBright,
+                    color = AccentSaffronDeep,
                     textAlign = TextAlign.Center
                 )
             }
@@ -86,8 +86,8 @@ fun OnboardingScreen(
             // Offline Assurance Badge
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = DarkSurfaceVariant.copy(alpha = 0.6f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder)
+                color = SurfaceVariantBg.copy(alpha = 0.6f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle)
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -114,8 +114,8 @@ fun OnboardingScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder)
+                colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle)
             ) {
                 Column(
                     modifier = Modifier.padding(20.dp),
@@ -144,7 +144,7 @@ fun OnboardingScreen(
                         },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = AccentSaffron,
-                            unfocusedBorderColor = DarkBorder,
+                            unfocusedBorderColor = BorderSubtle,
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
                             focusedLabelColor = AccentSaffron,
@@ -159,7 +159,7 @@ fun OnboardingScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .background(DarkSurfaceVariant)
+                            .background(SurfaceVariantBg)
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -215,7 +215,7 @@ fun OnboardingScreen(
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = AccentSaffron,
-                    contentColor = DarkBg
+                    contentColor = SurfaceBg
                 )
             ) {
                 Icon(

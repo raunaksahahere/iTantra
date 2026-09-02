@@ -2,22 +2,40 @@ package com.itantra.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// iTantra Obsidian & Tricolor-inspired Dark Palette
-val DarkBg = Color(0xFF090D16)
-val DarkSurface = Color(0xFF131B2E)
-val DarkSurfaceVariant = Color(0xFF1E293B)
-val DarkBorder = Color(0xFF334155)
+/**
+ * Light, calm palette with a single saffron accent (matching the "iT" launcher icon).
+ *
+ * Deliberately light rather than the previous dark theme: someone reaching for this app
+ * is often already frightened, and a cramped dark screen covered in alert icons reads as
+ * alarming. Colour is spent sparingly, so that when something *is* urgent — a distress
+ * announcement — it stands out instead of competing with the chrome.
+ */
 
-val AccentSaffron = Color(0xFFFF9933)
-val AccentSaffronBright = Color(0xFFFFB366)
-val AccentEmerald = Color(0xFF10B981)
-val AccentChakra = Color(0xFF3B82F6)
-val AccentCyan = Color(0xFF06B6D4)
-val AccentAlert = Color(0xFFEF4444)
+// Surfaces
+val SurfaceBg = Color(0xFFF4F1EC)          // warm off-white app background
+val SurfaceCard = Color(0xFFFFFFFF)        // cards, app bar, incoming bubbles
+val SurfaceVariantBg = Color(0xFFEDEFF2)   // inputs, chips, inactive fills
+val BorderSubtle = Color(0xFFE0E3E7)
 
-val TextPrimary = Color(0xFFF8FAFC)
-val TextSecondary = Color(0xFF94A3B8)
-val TextMuted = Color(0xFF64748B)
+// Accent — saffron carries brand identity; the deep variant is for text and icons,
+// where the bright fill tone would fail contrast against white.
+val AccentSaffron = Color(0xFFF57C1F)
+val AccentSaffronDeep = Color(0xFFB4530A)
 
-val PeerBadgeBg = Color(0xFF1E293B)
-val PeerBadgeBorder = Color(0xFF475569)
+val AccentEmerald = Color(0xFF0E8A5F)
+val AccentChakra = Color(0xFF2563EB)
+val AccentCyan = Color(0xFF0E7490)
+val AccentAlert = Color(0xFFD32F2F)
+
+// Text
+val TextPrimary = Color(0xFF14181C)
+val TextSecondary = Color(0xFF54656F)
+val TextMuted = Color(0xFF8A97A0)
+
+// Message bubbles
+val BubbleMine = Color(0xFFFFF0DF)         // faint saffron tint for own messages
+val BubbleTheirs = Color(0xFFFFFFFF)
+
+// Peer chips
+val PeerBadgeBg = Color(0xFFEDEFF2)
+val PeerBadgeBorder = Color(0xFFD4D9DE)

@@ -10,6 +10,8 @@ import com.itantra.mesh.transport.MeshService
 import com.itantra.schema.ITantraMessage
 import com.itantra.schema.MessageType
 import com.itantra.schema.Peer
+import com.itantra.services.meshgraph.MeshGraphService
+import com.itantra.services.meshgraph.RoutePlanner
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,6 +60,14 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
     private val _isMeshRunning = MutableStateFlow(false)
     val isMeshRunning: StateFlow<Boolean> = _isMeshRunning.asStateFlow()
 
+    private val locationProvider = LocationProvider(context)
+
+    /**
+     * Distress announcements live here rather than in a screen: a phone must keep
+     * relaying an SOS it is holding even with the UI closed.
+     */
+    val sos: SosManager by lazy { SosManager(context, this) }
+
     init {
         initMeshService()
     }
@@ -87,6 +97,7 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
 
             service.startServices()
             _isMeshRunning.value = true
+            sos.start()
             Log.i(TAG, "iTantra mesh started successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start mesh: ${e.message}", e)
@@ -99,6 +110,7 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
     fun stopMesh() {
         try {
             meshService?.stopServices()
+            sos.stop()
             _isMeshRunning.value = false
             _connectedPeers.value = emptyList()
             Log.i(TAG, "iTantra mesh stopped")
@@ -229,6 +241,69 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
         return if (success) message else null
     }
 
+    /**
+     * Raises a distress announcement: broadcast, no recipient, carrying coordinates when
+     * a fix was available. Always sent in the clear on the public mesh — a distress call
+     * that only reachable peers with an established Noise session could read would defeat
+     * its own purpose.
+     */
+    fun sendSos(
+        text: String,
+        srcLang: String,
+        lat: Double?,
+        lon: Double?,
+        accuracy: Float?,
+        expiresAt: Long
+    ): ITantraMessage? {
+        val identity = identityManager.getCurrentIdentity()
+            ?: identityManager.getOrCreateIdentity("User")
+
+        val message = ITantraMessage(
+            v = 1,
+            msgId = UUID.randomUUID().toString(),
+            type = MessageType.SOS,
+            srcLang = srcLang,
+            text = text,
+            senderName = identity.displayName,
+            senderId = identity.peerId,
+            deviceModel = identity.deviceModel,
+            isAlert = true,
+            ts = System.currentTimeMillis(),
+            lat = lat,
+            lon = lon,
+            gpsAccuracyM = accuracy,
+            expiresAt = expiresAt
+        )
+
+        return if (sendMessage(message, recipientPeerId = null, secure = false)) message else null
+    }
+
+    /** Re-broadcasts an announcement this device is holding, unchanged. */
+    fun rebroadcastSos(message: ITantraMessage): Boolean {
+        if (message.isExpired()) return false
+        return sendMessage(message, recipientPeerId = null, secure = false)
+    }
+
+    /** Tells the mesh that [original] has been resolved and must stop propagating. */
+    fun sendSosResolved(original: ITantraMessage): Boolean {
+        val identity = identityManager.getCurrentIdentity()
+            ?: identityManager.getOrCreateIdentity("User")
+
+        val message = ITantraMessage(
+            v = 1,
+            msgId = UUID.randomUUID().toString(),
+            type = MessageType.SOS_RESOLVED,
+            srcLang = original.srcLang,
+            text = "Resolved",
+            senderName = identity.displayName,
+            senderId = identity.peerId,
+            deviceModel = identity.deviceModel,
+            ts = System.currentTimeMillis(),
+            refMsgId = original.msgId
+        )
+        return sendMessage(message, recipientPeerId = null, secure = false)
+    }
+
     // --- BluetoothMeshDelegate implementation ---
 
     override fun didReceiveMessage(message: BitchatMessage) {
@@ -239,12 +314,39 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
             fallbackSenderName = message.sender
         )
 
-        if (decoded != null) {
-            Log.d(TAG, "Decoded incoming ITantraMessage from ${decoded.senderName} (${decoded.deviceModel}): ${decoded.text}")
-            scope.launch {
-                _incomingMessages.emit(decoded)
-            }
+        if (decoded == null) return
+
+        Log.d(TAG, "Decoded incoming ITantraMessage from ${decoded.senderName} (${decoded.deviceModel}): ${decoded.text}")
+
+        // Expired distress announcements are dropped rather than shown or relayed.
+        if (decoded.isExpired()) {
+            Log.i(TAG, "Dropping expired message ${decoded.msgId} (type=${decoded.type})")
+            return
         }
+
+        // Range gate: hop count always applies, GPS narrows it when both ends have a fix.
+        val hops = senderHops(decoded.senderId)
+        val verdict = RangePolicy.evaluate(hops, decoded.origin(), locationProvider.lastKnown())
+        if (verdict is RangePolicy.Verdict.OutOfRange) {
+            RangePolicy.logDrop("message ${decoded.msgId} from ${decoded.senderName}", verdict)
+            return
+        }
+
+        // Distress announcements are held and relayed by this device, not just displayed.
+        if (decoded.type == MessageType.SOS || decoded.type == MessageType.SOS_RESOLVED) {
+            sos.onReceived(decoded)
+        }
+
+        scope.launch {
+            _incomingMessages.emit(decoded)
+        }
+    }
+
+    /** Hops to [peerId] from the gossip graph, or null when it cannot be determined. */
+    private fun senderHops(peerId: String): Int? = try {
+        _connectedPeers.value.firstOrNull { it.peerId == peerId }?.hops
+    } catch (e: Exception) {
+        null
     }
 
     override fun didUpdatePeerList(peers: List<String>) {
@@ -283,12 +385,25 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
         return false
     }
 
+    /**
+     * Builds the peer list from two sources:
+     *  - **Direct peers** we hold a BLE link to, reported by the transport (hops = 1).
+     *  - **Multi-hop peers** learned from bitchat's announcement gossip, with the hop
+     *    count taken from the shortest path through [MeshGraphService]'s graph.
+     *
+     * Anything beyond [RangePolicy.MAX_HOPS] is dropped, so the list stays bounded to
+     * the incident area rather than growing with the whole mesh.
+     *
+     * Note the graph's reach is itself limited by how far announcements propagate, so
+     * observed hop counts will not exceed the announcement TTL regardless of the policy
+     * ceiling.
+     */
     private fun updatePeerList() {
         val service = meshService ?: return
         val nicknames = service.getPeerNicknames()
         val rssiMap = service.getPeerRSSI()
 
-        val mappedList = nicknames.map { (peerId, nickname) ->
+        val direct = nicknames.map { (peerId, nickname) ->
             val peerInfo = service.getPeerInfo(peerId)
             Peer(
                 peerId = peerId,
@@ -299,6 +414,39 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
                 rssi = rssiMap[peerId]
             )
         }
-        _connectedPeers.value = mappedList
+
+        val directIds = direct.map { it.peerId }.toSet()
+        val myId = service.myPeerID
+
+        val remote = try {
+            MeshGraphService.getInstance().graphState.value.nodes
+                .asSequence()
+                .filter { it.peerID != myId && it.peerID !in directIds }
+                .mapNotNull { node ->
+                    // shortestPath includes both endpoints, so hops = edges = size - 1.
+                    val path = RoutePlanner.shortestPath(myId, node.peerID) ?: return@mapNotNull null
+                    val hops = path.size - 1
+                    if (hops <= 1 || hops > RangePolicy.MAX_HOPS) return@mapNotNull null
+                    Peer(
+                        peerId = node.peerID,
+                        name = node.nickname?.takeIf { it.isNotBlank() }
+                            ?: "Peer ${node.peerID.take(4)}",
+                        deviceModel = "",
+                        hops = hops,
+                        lastSeen = System.currentTimeMillis(),
+                        rssi = null
+                    )
+                }
+                .toList()
+        } catch (e: Exception) {
+            Log.e(TAG, "Mesh graph unavailable, showing direct peers only: ${e.message}")
+            emptyList()
+        }
+
+        val all = (direct + remote).sortedWith(compareBy({ it.hops }, { it.name.lowercase() }))
+        if (remote.isNotEmpty()) {
+            Log.d(TAG, "Peers: ${direct.size} direct, ${remote.size} multi-hop")
+        }
+        _connectedPeers.value = all
     }
 }

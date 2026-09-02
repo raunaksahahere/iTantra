@@ -76,6 +76,7 @@ fun TransceiverScreen(
     val secureSend by voicePrefs.secureSend.collectAsState()
     val autoSpeak by voicePrefs.autoSpeak.collectAsState()
     val sttState by sttManager.state.collectAsState()
+    val sosAnnouncements by meshManager.sos.announcements.collectAsState()
 
     var messages by remember { mutableStateOf(listOf<ITantraMessage>()) }
     var typedText by remember { mutableStateOf("") }
@@ -83,6 +84,11 @@ fun TransceiverScreen(
     var isBypassMode by remember { mutableStateOf(false) }
     var isPttPressed by remember { mutableStateOf(false) }
     var showLangPicker by remember { mutableStateOf(false) }
+
+    // When set, messages are addressed to this peer and routed hop-by-hop instead of
+    // being broadcast to the whole mesh (§4.3 targeted ranged messaging).
+    var selectedPeerId by remember { mutableStateOf<String?>(null) }
+    var showSosDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -96,6 +102,14 @@ fun TransceiverScreen(
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasMicPermission = granted }
+
+    // Drop a target that has left the mesh, so messages do not silently go nowhere.
+    LaunchedEffect(connectedPeers) {
+        val id = selectedPeerId
+        if (id != null && connectedPeers.none { it.peerId == id }) {
+            selectedPeerId = null
+        }
+    }
 
     // Release model memory when the screen goes away (Rules §9).
     DisposableEffect(Unit) {
@@ -182,7 +196,7 @@ fun TransceiverScreen(
                         Text(
                             text = "${identity?.displayName.orEmpty()} (${identity?.deviceModel.orEmpty()})",
                             style = MaterialTheme.typography.labelSmall,
-                            color = AccentSaffronBright
+                            color = AccentSaffronDeep
                         )
                     }
                 },
@@ -191,7 +205,7 @@ fun TransceiverScreen(
                     FilledTonalButton(
                         onClick = { showLangPicker = true },
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = DarkSurfaceVariant)
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = SurfaceVariantBg)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Translate,
@@ -214,6 +228,15 @@ fun TransceiverScreen(
                             imageVector = Icons.Default.Warning,
                             contentDescription = "Alert Mode",
                             tint = if (isAlertMode) AccentAlert else TextMuted
+                        )
+                    }
+
+                    // Raise a distress announcement.
+                    IconButton(onClick = { showSosDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Sos,
+                            contentDescription = "Raise distress announcement",
+                            tint = AccentAlert
                         )
                     }
 
@@ -240,10 +263,10 @@ fun TransceiverScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceCard)
             )
         },
-        containerColor = DarkBg
+        containerColor = SurfaceBg
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -251,9 +274,30 @@ fun TransceiverScreen(
                 .padding(paddingValues)
         ) {
             // Connected Peers Strip
-            ConnectedPeersHeader(peers = connectedPeers)
+            ConnectedPeersHeader(
+                peers = connectedPeers,
+                selectedPeerId = selectedPeerId,
+                onSelectPeer = { selectedPeerId = it }
+            )
 
             BatteryOptimizationNotice()
+
+            // Live distress announcements this device is holding and relaying.
+            if (sosAnnouncements.isNotEmpty()) {
+                SosBanner(
+                    announcements = sosAnnouncements,
+                    locationProvider = remember { com.itantra.mesh.LocationProvider(context) },
+                    onResolve = { meshManager.sos.resolve(it) }
+                )
+            }
+
+            // Shows who a targeted message will go to, and how it will get there.
+            selectedPeerId?.let { id ->
+                val target = connectedPeers.firstOrNull { it.peerId == id }
+                if (target != null) {
+                    TargetedRecipientStrip(target) { selectedPeerId = null }
+                }
+            }
 
             // Alert Mode Banner
             AnimatedVisibility(visible = isAlertMode) {
@@ -351,8 +395,8 @@ fun TransceiverScreen(
 
             // Bottom Input & PTT Controls
             Surface(
-                color = DarkSurface,
-                border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder)
+                color = SurfaceCard,
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle)
             ) {
                 Column(
                     modifier = Modifier
@@ -376,11 +420,11 @@ fun TransceiverScreen(
                             shape = RoundedCornerShape(24.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = AccentSaffron,
-                                unfocusedBorderColor = DarkBorder,
+                                unfocusedBorderColor = BorderSubtle,
                                 focusedTextColor = TextPrimary,
                                 unfocusedTextColor = TextPrimary,
-                                focusedContainerColor = DarkSurfaceVariant,
-                                unfocusedContainerColor = DarkSurfaceVariant
+                                focusedContainerColor = SurfaceVariantBg,
+                                unfocusedContainerColor = SurfaceVariantBg
                             )
                         )
 
@@ -391,6 +435,7 @@ fun TransceiverScreen(
                                         text = typedText.trim(),
                                         srcLang = selectedLanguage,
                                         isAlert = isAlertMode,
+                                        recipientPeerId = selectedPeerId,
                                         secure = secureSend
                                     )
                                     if (sent != null) {
@@ -410,7 +455,7 @@ fun TransceiverScreen(
                             Icon(
                                 imageVector = Icons.Default.Send,
                                 contentDescription = "Send",
-                                tint = DarkBg
+                                tint = SurfaceBg
                             )
                         }
                     }
@@ -428,7 +473,7 @@ fun TransceiverScreen(
                                     else listOf(AccentSaffron, Color(0xFFEA580C))
                                 )
                             )
-                            .pointerInput(selectedLanguage, isAlertMode, secureSend, hasMicPermission) {
+                            .pointerInput(selectedLanguage, isAlertMode, secureSend, hasMicPermission, selectedPeerId) {
                                 detectTapGestures(
                                     onPress = {
                                         if (!hasMicPermission) {
@@ -452,6 +497,7 @@ fun TransceiverScreen(
                                                 text = spoken,
                                                 srcLang = selectedLanguage,
                                                 isAlert = isAlertMode,
+                                                recipientPeerId = selectedPeerId,
                                                 secure = secureSend
                                             )
                                             if (sent != null) {
@@ -469,7 +515,7 @@ fun TransceiverScreen(
                         Icon(
                             imageVector = if (isPttPressed) Icons.Default.GraphicEq else Icons.Default.Mic,
                             contentDescription = "Push to Talk",
-                            tint = DarkBg,
+                            tint = SurfaceBg,
                             modifier = Modifier.size(36.dp)
                         )
                     }
@@ -489,6 +535,25 @@ fun TransceiverScreen(
                 }
             }
         }
+    }
+
+    if (showSosDialog) {
+        SosConfirmDialog(
+            onDismiss = { showSosDialog = false },
+            onConfirm = { note ->
+                showSosDialog = false
+                coroutineScope.launch {
+                    val raised = meshManager.sos.raise(
+                        text = note.ifBlank { "Distress signal — assistance needed" },
+                        srcLang = selectedLanguage
+                    )
+                    if (raised != null) {
+                        messages = messages + raised
+                        listState.animateScrollToItem((messages.size - 1).coerceAtLeast(0))
+                    }
+                }
+            }
+        )
     }
 
     // Language picker — multi-select, with live switching between enabled languages.
@@ -591,7 +656,7 @@ fun TransceiverScreen(
                     Text("Close", color = AccentSaffron)
                 }
             },
-            containerColor = DarkSurface
+            containerColor = SurfaceCard
         )
     }
 }
@@ -683,121 +748,420 @@ private data class Quad(
 )
 
 @Composable
-private fun ConnectedPeersHeader(peers: List<Peer>) {
+private fun ConnectedPeersHeader(
+    peers: List<Peer>,
+    selectedPeerId: String?,
+    onSelectPeer: (String?) -> Unit
+) {
     var query by remember { mutableStateOf("") }
+
+    // Match on name, device model and peer ID: in a crowd the display name is often the
+    // least distinctive thing about a node.
     val filteredPeers = remember(peers, query) {
-        peers.filter { it.name.contains(query.trim(), ignoreCase = true) }
+        val q = query.trim()
+        if (q.isEmpty()) peers
+        else peers.filter {
+            it.name.contains(q, ignoreCase = true) ||
+                it.deviceModel.contains(q, ignoreCase = true) ||
+                it.peerId.contains(q, ignoreCase = true)
+        }
     }
+
+    val directCount = peers.count { it.hops <= 1 }
+    val relayedCount = peers.size - directCount
+
     Surface(
-        color = DarkSurface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder),
+        color = SurfaceCard,
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Hub,
-                        contentDescription = "Peers",
-                        tint = AccentCyan,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = "NEARBY MESH PEERS (${peers.size})",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = TextSecondary
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Hub,
+                    contentDescription = null,
+                    tint = AccentCyan,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = buildString {
+                        append("NEARBY PEERS (${peers.size})")
+                        if (relayedCount > 0) append("  •  $directCount direct, $relayedCount relayed")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = TextSecondary
+                )
             }
 
             if (peers.isEmpty()) {
                 Text(
-                    text = "Scanning for nearby iTantra nodes over BLE mesh. No peers nearby to search yet.",
+                    text = "Scanning for nearby iTantra nodes over the BLE mesh.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextMuted,
                     fontSize = 12.sp,
-                    modifier = Modifier.padding(vertical = 4.dp)
+                    modifier = Modifier.padding(vertical = 6.dp)
+                )
+            } else {
+                // Search stays enabled whenever there are peers to search. It used to be
+                // gated on a peer list that was always empty, which made it look broken.
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = AccentCyan)
+                    },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search", tint = TextMuted)
+                            }
+                        }
+                    },
+                    placeholder = { Text("Search by name, model or ID", color = TextMuted) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = AccentSaffron,
+                        unfocusedBorderColor = BorderSubtle,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = SurfaceVariantBg,
+                        unfocusedContainerColor = SurfaceVariantBg
+                    )
+                )
+
+                if (filteredPeers.isEmpty()) {
+                    Text(
+                        text = "No peer matches \"${query.trim()}\".",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextMuted,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                } else {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items(filteredPeers, key = { it.peerId }) { peer ->
+                            PeerChip(
+                                peer = peer,
+                                selected = peer.peerId == selectedPeerId,
+                                onClick = {
+                                    onSelectPeer(if (peer.peerId == selectedPeerId) null else peer.peerId)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One peer, tagged with how far away it is. "Direct" means a live BLE link; a number is
+ * how many relay hops the mesh gossip says it takes to reach them.
+ *
+ * Tapping selects the peer as the message recipient, which is what turns an ordinary
+ * broadcast into a targeted ranged message.
+ */
+@Composable
+private fun PeerChip(peer: Peer, selected: Boolean, onClick: () -> Unit) {
+    val isDirect = peer.hops <= 1
+    val accent = if (isDirect) AccentEmerald else AccentChakra
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) BubbleMine else SurfaceVariantBg,
+        border = androidx.compose.foundation.BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) AccentSaffron else PeerBadgeBorder
+        ),
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Column {
+                Text(
+                    text = peer.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Text(
+                    text = peer.deviceModel.ifEmpty { "Node ${peer.peerId.take(4)}" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextMuted,
+                    fontSize = 9.sp
                 )
             }
 
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                enabled = peers.isNotEmpty(),
-                singleLine = true,
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = null, tint = AccentCyan)
-                },
-                placeholder = {
-                    Text(if (peers.isEmpty()) "No peers nearby to search" else "Filter nearby peers by name")
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = AccentCyan,
-                    unfocusedBorderColor = DarkBorder,
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary
-                )
-            )
-
-            if (peers.isNotEmpty() && filteredPeers.isEmpty()) {
-                Text(
-                    text = "No nearby peer matches \"${query.trim()}\" — they must be nearby and broadcasting.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextMuted,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            } else if (filteredPeers.isNotEmpty()) {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(vertical = 6.dp)
+            // Hop badge: "Direct" for a live link, otherwise the hop count with an
+            // antenna icon to signal it is reached through other phones.
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = accent.copy(alpha = 0.14f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.5f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    items(filteredPeers) { peer ->
+                    if (isDirect) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(accent)
+                        )
+                        Text(
+                            text = "Direct",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = accent,
+                            fontSize = 9.sp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.SettingsInputAntenna,
+                            contentDescription = "Relayed",
+                            tint = accent,
+                            modifier = Modifier.size(10.dp)
+                        )
+                        Text(
+                            text = "${peer.hops}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = accent,
+                            fontSize = 9.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+/**
+ * Distress announcements currently held by this device.
+ *
+ * Location is intentionally not shown here — it is revealed only when the reader taps
+ * into an announcement, alongside their own position so the two can be compared.
+ */
+@Composable
+private fun SosBanner(
+    announcements: List<com.itantra.mesh.SosManager.Active>,
+    locationProvider: com.itantra.mesh.LocationProvider,
+    onResolve: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf<String?>(null) }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = AccentAlert.copy(alpha = 0.08f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, AccentAlert.copy(alpha = 0.45f))
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(Icons.Default.Sos, contentDescription = null, tint = AccentAlert, modifier = Modifier.size(18.dp))
+                Text(
+                    text = "${announcements.size} ACTIVE DISTRESS ${if (announcements.size == 1) "CALL" else "CALLS"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = AccentAlert
+                )
+            }
+
+            announcements.forEach { entry ->
+                val msg = entry.message
+                val minsLeft = msg.remainingMillis() / 60000
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = if (expanded == msg.msgId) null else msg.msgId }
+                        .padding(vertical = 6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (entry.isMine) "You" else msg.senderName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = msg.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = buildString {
+                                    append("${minsLeft} min left")
+                                    append(if (msg.hasLocation) "  •  location attached" else "  •  no location")
+                                    append("  •  tap for details")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextMuted,
+                                fontSize = 10.sp
+                            )
+                        }
+                        if (entry.isMine) {
+                            TextButton(onClick = { onResolve(msg.msgId) }) {
+                                Text("Resolve", color = AccentEmerald, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    if (expanded == msg.msgId) {
+                        val here = remember(msg.msgId) { locationProvider.lastKnown() }
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = DarkSurfaceVariant,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder)
+                            shape = RoundedCornerShape(8.dp),
+                            color = SurfaceCard,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(AccentEmerald)
+                                Text(
+                                    text = if (msg.lat != null && msg.lon != null) {
+                                        "Origin: %.5f, %.5f".format(msg.lat, msg.lon) +
+                                            (msg.gpsAccuracyM?.let { " (±${it.toInt()} m)" } ?: "")
+                                    } else {
+                                        "Origin: no position — the sender had no GPS fix"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextPrimary,
+                                    fontSize = 11.sp
                                 )
-                                Column {
-                                    Text(
-                                        text = peer.name,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
+                                Text(
+                                    text = if (here != null) {
+                                        "You: %.5f, %.5f".format(here.latitude, here.longitude)
+                                    } else {
+                                        "You: no position available"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                                if (msg.lat != null && msg.lon != null && here != null) {
+                                    val metres = com.itantra.mesh.RangePolicy.distanceMeters(
+                                        msg.lat, msg.lon, here.latitude, here.longitude
                                     )
                                     Text(
-                                        text = peer.deviceModel.ifEmpty { "Node ${peer.peerId.take(4)}" },
+                                        text = "Approximately ${com.itantra.mesh.RangePolicy.formatDistance(metres)} away",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = TextMuted,
-                                        fontSize = 9.sp
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentAlert,
+                                        fontSize = 11.sp
                                     )
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Confirmation before broadcasting a distress call, with an optional note. */
+@Composable
+private fun SosConfirmDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var note by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Sos, contentDescription = null, tint = AccentAlert) },
+        title = { Text("Broadcast distress call?", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "This goes to every phone in range and keeps being passed on for one hour, " +
+                        "including to people who arrive later. Your location is attached if " +
+                        "available. You can cancel it at any time.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    placeholder = { Text("Add a short note (optional)", color = TextMuted) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = AccentAlert,
+                        unfocusedBorderColor = BorderSubtle,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(note) },
+                colors = ButtonDefaults.buttonColors(containerColor = AccentAlert)
+            ) {
+                Text("Broadcast SOS", fontWeight = FontWeight.Bold, color = SurfaceCard)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) }
+        },
+        containerColor = SurfaceCard
+    )
+}
+
+/** Shows the peer a targeted message will be routed to, and how far away they are. */
+@Composable
+private fun TargetedRecipientStrip(peer: Peer, onClear: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = BubbleMine,
+        border = androidx.compose.foundation.BorderStroke(1.dp, AccentSaffron.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(Icons.Default.AlternateEmail, contentDescription = null, tint = AccentSaffronDeep, modifier = Modifier.size(16.dp))
+            Text(
+                text = buildString {
+                    append("Sending to ${peer.name}")
+                    append(if (peer.hops <= 1) " (direct)" else " (${peer.hops} hops away)")
+                },
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = AccentSaffronDeep,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onClear, modifier = Modifier.size(20.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "Send to everyone instead", tint = TextMuted, modifier = Modifier.size(16.dp))
             }
         }
     }
@@ -899,14 +1263,16 @@ private fun MessageBubble(
                 bottomStart = if (isMine) 16.dp else 4.dp,
                 bottomEnd = if (isMine) 4.dp else 16.dp
             ),
-            color = if (isAlert) AccentAlert.copy(alpha = 0.25f)
-            else if (isMine) DarkSurfaceVariant
-            else DarkSurface,
+            color = when {
+                isAlert -> AccentAlert.copy(alpha = 0.10f)
+                isMine -> BubbleMine
+                else -> BubbleTheirs
+            },
             border = androidx.compose.foundation.BorderStroke(
                 1.dp,
                 if (isAlert) AccentAlert
                 else if (isMine) AccentSaffron.copy(alpha = 0.5f)
-                else DarkBorder
+                else BorderSubtle
             )
         ) {
             Column(
@@ -925,6 +1291,8 @@ private fun MessageBubble(
                             MessageType.ALERT -> Icons.Default.Emergency
                             MessageType.TYPED_TEXT -> Icons.Default.ChatBubbleOutline
                             MessageType.SYSTEM -> Icons.Default.Info
+                            MessageType.SOS -> Icons.Default.Sos
+                            MessageType.SOS_RESOLVED -> Icons.Default.CheckCircle
                         },
                         contentDescription = null,
                         tint = if (isAlert) AccentAlert else AccentSaffron,
@@ -937,6 +1305,8 @@ private fun MessageBubble(
                             MessageType.ALERT -> "ALERT"
                             MessageType.TYPED_TEXT -> "TEXT"
                             MessageType.SYSTEM -> "SYSTEM"
+                            MessageType.SOS -> "DISTRESS"
+                            MessageType.SOS_RESOLVED -> "RESOLVED"
                         } + " • ${message.srcLang.uppercase()}",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,

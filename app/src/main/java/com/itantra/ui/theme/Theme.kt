@@ -1,28 +1,28 @@
 package com.itantra.ui.theme
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
-private val DarkColorScheme = darkColorScheme(
+private val LightColorScheme = lightColorScheme(
     primary = AccentSaffron,
-    onPrimary = DarkBg,
-    primaryContainer = DarkSurfaceVariant,
+    onPrimary = SurfaceCard,
+    primaryContainer = BubbleMine,
     onPrimaryContainer = TextPrimary,
     secondary = AccentEmerald,
-    onSecondary = DarkBg,
-    secondaryContainer = DarkSurface,
+    onSecondary = SurfaceCard,
+    secondaryContainer = SurfaceVariantBg,
     onSecondaryContainer = TextPrimary,
     tertiary = AccentChakra,
-    background = DarkBg,
+    background = SurfaceBg,
     onBackground = TextPrimary,
-    surface = DarkSurface,
+    surface = SurfaceCard,
     onSurface = TextPrimary,
-    surfaceVariant = DarkSurfaceVariant,
+    surfaceVariant = SurfaceVariantBg,
     onSurfaceVariant = TextSecondary,
-    outline = DarkBorder,
+    outline = BorderSubtle,
     error = AccentAlert,
-    onError = TextPrimary
+    onError = SurfaceCard
 )
 
 @Composable
@@ -30,7 +30,7 @@ fun ITantraTheme(
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
-        colorScheme = DarkColorScheme,
+        colorScheme = LightColorScheme,
         typography = Typography,
         content = content
     )

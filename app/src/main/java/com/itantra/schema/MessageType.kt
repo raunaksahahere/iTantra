@@ -19,5 +19,13 @@ enum class MessageType : Parcelable {
     ALERT,
 
     @SerializedName("SYSTEM")
-    SYSTEM
+    SYSTEM,
+
+    /** Distress announcement: broadcast, no recipient, optional coordinates. */
+    @SerializedName("SOS")
+    SOS,
+
+    /** Sender cancelling one of their own SOS announcements early. */
+    @SerializedName("SOS_RESOLVED")
+    SOS_RESOLVED
 }

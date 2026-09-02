@@ -3,6 +3,7 @@ import com.itantra.mesh.protocol.MessageType
 
 import android.util.Log
 import com.itantra.mesh.model.RoutedPacket
+import com.itantra.util.AppConstants
 import com.itantra.mesh.protocol.BitchatPacket
 import com.itantra.util.toHexString
 import kotlinx.coroutines.*
@@ -19,6 +20,9 @@ class PacketRelayManager(private val myPeerID: String) {
     
     companion object {
         private const val TAG = "PacketRelayManager"
+
+        /** Hops from origin during which a packet is relayed unconditionally. */
+        private const val ALWAYS_RELAY_HOPS = 3
     }
     
     private fun isRelayEnabled(): Boolean = try {
@@ -140,9 +144,15 @@ class PacketRelayManager(private val myPeerID: String) {
      * Determine if we should relay this packet based on type and network conditions
      */
     private fun shouldRelayPacket(packet: BitchatPacket, fromPeerID: String): Boolean {
-        // Always relay if TTL is high enough (indicates important message)
-        if (packet.ttl >= 4u) {
-            Log.d(TAG, "High TTL (${packet.ttl}), relaying")
+        // Always relay while the packet is still near its origin. This threshold must be
+        // relative to the packet's own hop budget: an absolute "ttl >= 4" is calibrated to
+        // the 7-hop default, and would keep every packet in the always-relay band for the
+        // first 16 hops once extended-range traffic (TTL 20) is in play, disabling the
+        // probabilistic damping below and turning a dense mesh into a broadcast storm.
+        val ceiling = maxOf(packet.ttl, AppConstants.MESSAGE_TTL_HOPS).toInt()
+        val hopsTravelled = ceiling - packet.ttl.toInt()
+        if (hopsTravelled < ALWAYS_RELAY_HOPS) {
+            Log.d(TAG, "Near origin (${hopsTravelled} hops travelled, TTL ${packet.ttl}), relaying")
             return true
         }
         

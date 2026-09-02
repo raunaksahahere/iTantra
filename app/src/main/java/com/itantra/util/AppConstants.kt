@@ -10,6 +10,15 @@ object AppConstants {
     val MESSAGE_TTL_HOPS: UByte = 7u     // Default TTL for regular packets
     val SYNC_TTL_HOPS: UByte = 0u        // TTL for neighbor-only sync packets
 
+    /**
+     * Hop ceiling for distress announcements and targeted ranged messages.
+     *
+     * Ordinary chat stays on bitchat's tuned 7-hop default; only traffic that is meant
+     * to reach across a whole incident area pays the extra flooding cost. This is
+     * routing plumbing, not a user-facing setting.
+     */
+    val EXTENDED_TTL_HOPS: UByte = 20u
+
     object Mesh {
         // Peer lifecycle
         const val STALE_PEER_TIMEOUT_MS: Long = 180_000L // 3 minutes

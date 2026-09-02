@@ -18,7 +18,7 @@ import com.itantra.mesh.ITantraMeshManager
 import com.itantra.mesh.service.MeshForegroundService
 import com.itantra.ui.languages.LanguagePacksScreen
 import com.itantra.ui.onboarding.OnboardingScreen
-import com.itantra.ui.theme.DarkBg
+import com.itantra.ui.theme.SurfaceBg
 import com.itantra.ui.theme.ITantraTheme
 import com.itantra.ui.transceiver.TransceiverScreen
 
@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
             ITantraTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = DarkBg
+                    color = SurfaceBg
                 ) {
                     var currentScreen by remember {
                         mutableStateOf(

@@ -73,11 +73,11 @@ fun LanguagePacksScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceCard)
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = DarkBg
+        containerColor = SurfaceBg
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
@@ -117,8 +117,8 @@ fun LanguagePacksScreen(
 private fun OfflineBanner() {
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = DarkSurfaceVariant,
-        border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder)
+        color = SurfaceVariantBg,
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -164,8 +164,8 @@ private fun LanguagePackItem(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder)
+        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
@@ -190,7 +190,7 @@ private fun LanguagePackItem(
                         Text(
                             text = "(${pack.nativeName})",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = AccentSaffronBright
+                            color = AccentSaffronDeep
                         )
                     }
 
@@ -214,7 +214,7 @@ private fun LanguagePackItem(
                         progress = { progress.fraction },
                         modifier = Modifier.fillMaxWidth(),
                         color = AccentSaffron,
-                        trackColor = DarkSurfaceVariant
+                        trackColor = SurfaceVariantBg
                     )
                     Text(
                         text = "${progress.fileName} — ${(progress.fraction * 100).toInt()}%",
@@ -316,8 +316,8 @@ private fun StatusAction(
         ModelManager.PackStatus.UNPUBLISHED -> {
             Surface(
                 shape = RoundedCornerShape(8.dp),
-                color = DarkSurfaceVariant,
-                border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder)
+                color = SurfaceVariantBg,
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle)
             ) {
                 Text(
                     text = "Not published",

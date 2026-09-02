@@ -43,8 +43,49 @@ data class ITantraMessage(
     val isAlert: Boolean = false,
 
     @SerializedName("ts")
-    val ts: Long = System.currentTimeMillis()
+    val ts: Long = System.currentTimeMillis(),
+
+    /** Sender's latitude at send time. Null whenever there was no GPS fix. */
+    @SerializedName("lat")
+    val lat: Double? = null,
+
+    /** Sender's longitude at send time. Null whenever there was no GPS fix. */
+    @SerializedName("lon")
+    val lon: Double? = null,
+
+    /** Reported accuracy of [lat]/[lon] in metres, for honest display. */
+    @SerializedName("gpsAccuracyM")
+    val gpsAccuracyM: Float? = null,
+
+    /**
+     * Wall-clock instant after which this message must stop propagating.
+     * Set for SOS (creation + 1 hour); null for ordinary traffic.
+     */
+    @SerializedName("expiresAt")
+    val expiresAt: Long? = null,
+
+    /** For SOS_RESOLVED: the msgId of the announcement being cancelled. */
+    @SerializedName("refMsgId")
+    val refMsgId: String? = null
 ) : Parcelable {
+
+    val isSos: Boolean get() = type == MessageType.SOS
+
+    val hasLocation: Boolean get() = lat != null && lon != null
+
+    /** True once [expiresAt] has passed. Messages without an expiry never expire. */
+    fun isExpired(now: Long = System.currentTimeMillis()): Boolean =
+        expiresAt != null && now >= expiresAt
+
+    /** Remaining lifetime in milliseconds, floored at zero. */
+    fun remainingMillis(now: Long = System.currentTimeMillis()): Long =
+        expiresAt?.let { (it - now).coerceAtLeast(0L) } ?: 0L
+
+    fun origin(): com.itantra.mesh.RangePolicy.Origin? =
+        if (lat != null && lon != null) {
+            com.itantra.mesh.RangePolicy.Origin(lat, lon)
+        } else null
+
 
     fun toJson(): String {
         return gson.toJson(this)
