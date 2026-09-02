@@ -34,35 +34,42 @@ iTantra turns ordinary Android phones into walkie-talkies that work with no infr
 | Crowded event where the network is congested | A channel that does not depend on the tower at all |
 | Relief camp with mixed-language teams | Speak your language, be heard in theirs |
 | Broadcasting an urgent instruction to everyone nearby | Alert mode: max volume, cannot be silenced by the receiver's ringer settings |
+| Trapped, hurt, or separated from the group | One-tap distress call that keeps propagating for an hour and reaches people who arrive later |
 | Someone in the group can't read or type | They just hold a button and talk |
 
 ## Features
 
 - **Speech → text → speech transceiver.** Hold to talk on one phone, hear it on another. Only text crosses the link, so a spoken sentence costs a few hundred bytes instead of tens of kilobytes.
-- **Ten Indian languages.** Hindi and English work out of the box; the other eight install as one-time language packs.
+- **Ten languages.** Hindi and English are ready to install today; the rest are one-time language packs. Models are downloaded once rather than bundled — a single language is a few hundred megabytes, which is not something to put in an APK.
 - **Everything runs on the device.** Speech recognition, speech synthesis and voice detection all execute locally with ONNX Runtime. Nothing is sent anywhere for processing, and the whole loop works in airplane mode.
 - **Bluetooth LE mesh transport.** Built on the [bitchat](https://github.com/permissionlesstech/bitchat-android) stack — automatic peer discovery, multi-hop relay, no pairing, no accounts. Phones out of direct range are reached through the phones in between.
-- **End-to-end encryption.** Noise Protocol sessions for private messages; broadcast messages are signed, and secure-versus-broadcast is the sender's explicit choice.
+- **Signed by default, encrypted on request.** Every message is Ed25519-signed, so a relay can't forge or tamper with one — but a public broadcast is readable by the phones that carry it, which is the price of reaching furthest. Flip the lock and messages go out Noise-encrypted end to end to each peer instead. It's the sender's explicit choice per conversation, and the interface says which mode you're in rather than leaving you to assume.
 - **Voice and text in one thread.** Every message exists as both. Type when you can't speak, tap the speaker icon to hear any received message read aloud, or let it auto-speak as it arrives.
+- **Distress announcements.** A one-tap SOS broadcast to everyone in range, carrying your coordinates if the phone has a fix. It keeps propagating for an hour, and every phone holding it re-announces to people it newly meets — so a search party arriving forty minutes later still hears it. You can mark it resolved at any point. Tapping an announcement shows the origin alongside your own position and the distance between them.
+- **Reaching people who aren't nearby.** The peer list shows phones you're directly linked to *and* phones reachable through other phones, each tagged `Direct` or with a hop count. Tap one to address a message to it, and the mesh routes it hop by hop.
 - **Alert mode.** Urgent messages announce on the alarm stream at maximum volume and cannot be interrupted — they get through even if the receiver's phone is on silent in a pocket.
 - **Voice-activity gating.** Silero VAD listens for actual speech instead of running recognition continuously, which is what keeps idle battery drain reasonable.
 - **Lightweight local identity.** You pick a display name; the app generates a Curve25519 keypair on first launch and derives a peer ID from its fingerprint. Private keys live in the Android Keystore and never leave the device. Two identical phone models in the same room stay distinguishable, and the sender can see each peer's device model.
-- **On-demand model provisioning.** Language packs download once, verified by SHA-256 against a signed manifest, with a mirror fallback. The Model Manager refuses to install a file it cannot verify. One language stays resident in RAM at a time, so the app stays usable on low-end hardware.
+- **On-demand model provisioning.** Language packs download once, each file checked against a SHA-256 recorded in a manifest that ships inside the app, with a mirror to fall back on. A file whose hash isn't published simply won't install — there is no "trust it anyway" path. One language stays resident in RAM at a time, so the app stays usable on low-end hardware.
 
 ### Languages
 
-| Language | | Code | Availability |
-|---|---|---|---|
-| Hindi | हिन्दी | `hi` | Bundled |
-| English | English (Indian) | `en` | Bundled |
-| Bengali | বাংলা | `bn` | Language pack |
-| Gujarati | ગુજરાતી | `gu` | Language pack |
-| Kannada | ಕನ್ನಡ | `kn` | Language pack |
-| Malayalam | മലയാളം | `ml` | Language pack |
-| Marathi | मराठी | `mr` | Language pack |
-| Odia | ଓଡ଼ିଆ | `or` | Language pack |
-| Tamil | தமிழ் | `ta` | Language pack |
-| Telugu | తెలుగు | `te` | Language pack |
+Languages are multi-select — enable as many as you need and switch between them mid-conversation without restarting.
+
+| Language | | Code | Recognition | Synthesis |
+|---|---|---|---|---|
+| Hindi | हिन्दी | `hi` | Ready | Ready |
+| English | English (Indian) | `en` | Ready | Ready |
+| Bengali | বাংলা | `bn` | Ready | Exportable |
+| Gujarati | ગુજરાતી | `gu` | Ready | Exportable |
+| Kannada | ಕನ್ನಡ | `kn` | Ready | Exportable |
+| Malayalam | മലയാളം | `ml` | Ready | Exportable |
+| Marathi | मराठी | `mr` | Ready | Exportable |
+| Tamil | தமிழ் | `ta` | Ready | Exportable |
+| Telugu | తెలుగు | `te` | Ready | Exportable |
+| Odia | ଓଡ଼ିଆ | `or` | **None published** | Exportable |
+
+*Ready* means a verified quantized model exists and the app can install it. *Exportable* means the upstream checkpoint is published and `model-export/` turns it into a mobile model in about a minute per language. Odia is the one gap: AI4Bharat has not published a recognition model for it in a form anyone has exported yet.
 
 ## How it works
 
@@ -81,23 +88,61 @@ Silero VAD decides when you are actually speaking, so recognition doesn't run on
 
 Everything is open source: Kotlin and Jetpack Compose for the app, ONNX Runtime Mobile for inference, bitchat for transport, and MIT-licensed models throughout.
 
+## Building it
+
+Android Studio, or from the command line:
+
+```
+./gradlew assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
+./gradlew testDebugUnitTest
+```
+
+Requires JDK 17 and a `local.properties` pointing at your Android SDK. The debug build
+targets `arm64-v8a` and `armeabi-v7a` only — the x86 variants exist for emulators, and an
+emulator cannot exercise a Bluetooth mesh, so they are left out rather than adding tens of
+megabytes of unused native code.
+
+### Getting speech onto a phone
+
+The APK ships the voice-activity detector but not the recognition and synthesis models,
+which are far too large to bundle. Exported models are not in the repository either — run
+the export first (`model-export/README.md`), then install them once per device:
+
+```
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell mkdir -p /sdcard/Android/data/com.itantra/files/models/hi
+adb push model-export/out/hi/. /sdcard/Android/data/com.itantra/files/models/hi/
+```
+
+Open **Language Packs** — an installed language reads *Ready*. Recognition models can also
+be downloaded from inside the app, which is the path a real user takes; the `adb push`
+route exists so a language can be tested before it is hosted anywhere.
+
+`model-export/README.md` has the full checklist, how to export the remaining languages,
+and the pinned dependency versions the export needs.
+
 ## Design decisions worth knowing
 
 - **No audio on the wire, ever.** Not compressed, not as a fallback. The entire bandwidth argument collapses the moment audio is serialized into a payload, so it simply isn't allowed.
 - **Offline means offline at runtime.** The only network code in the app is the Model Manager, and it only runs for one-time language-pack downloads. There is no hosted API anywhere in the speak → transmit → hear loop. Provisioning a language pack is treated like downloading an offline map.
 - **Nothing unverified gets installed.** A model file is installable only when both its URL and its SHA-256 are published in the manifest. Missing hash, no install.
 - **Translation stays optional.** The voice loop never depends on it, so translation can be absent or slow without taking the core feature down with it.
+- **Distance is measured in hops first, GPS second.** Reach is capped by hop count, which works with no satellite fix at all — and no fix is the normal case inside a collapsed building or a basement. A GPS fix, when both ends have one, can only *tighten* that boundary, never widen it. Hop count is an approximation of distance, not a guaranteed range in kilometres: a Bluetooth hop might be ten metres through concrete or a hundred across open ground, which is why the interface says "3 hops away" rather than inventing a distance.
 
 ## Project status
 
-Actively in development. The app is built and the pipelines are wired end to end, but it is **not yet a working voice demo**, for one specific reason:
+Actively in development. Every piece of the voice loop now exists as a runnable model, and the app is wired end to end — but **it has not yet been run on real phones**, which is the honest bar for a project like this.
 
-- ✅ **Working** — BLE mesh transport, identity and peer discovery, typed text messaging, read-aloud, alert mode, push-to-talk capture, language selection, Model Manager with SHA-256 verification, Silero VAD (bundled and running).
-- ⏳ **Blocked** — speech recognition and synthesis are code-complete and wired, but upstream publishes IndicConformer and Indic-TTS as NeMo/PyTorch checkpoints rather than mobile-ready ONNX. Each language still has to be exported and quantized before it can run. Until that lands, the engines report "model missing" rather than failing silently.
-- 📋 **Planned** — offline translation between languages (IndicTrans2, no code yet), and bypass mode for raw audio with recognition and synthesis switched off.
+- ✅ **Built and verified on the desktop** — BLE mesh transport, identity and peer discovery, typed text, read-aloud, alert mode, push-to-talk capture, multi-select languages, distress announcements, multi-hop peer visibility, targeted messaging, and the Model Manager with SHA-256 verification. Recognition and synthesis models exist for Hindi and English and produce correct output when driven directly.
+- ⏳ **Not yet proven on hardware** — two-phone discovery, mesh delivery, distress propagation across relays, and end-to-end spoken latency. None of these can be honestly claimed from a desktop, and BLE in particular behaves differently on real radios and per-manufacturer power management.
+- 📋 **Planned** — offline translation between languages (IndicTrans2, no code yet), bypass mode for raw audio, and recognition for Odia.
 
-Silero VAD is currently the only model shipping as a working binary.
+Recognition models come from published Apache-2.0 exports of the AI4Bharat weights, so nothing needs exporting for the nine languages that have them. Synthesis is exported locally by the tooling in `model-export/`, which produces roughly 85 MB per language after int8 quantization.
+
+No performance numbers are quoted anywhere in this README, because none have been measured on a phone yet.
 
 ## Acknowledgements
 
 Built on the work of [bitchat](https://github.com/permissionlesstech/bitchat-android) (mesh transport), [AI4Bharat](https://ai4bharat.iitm.ac.in/) (IndicConformer, Indic-TTS and IndicTrans2), and [Silero](https://github.com/snakers4/silero-vad) (voice activity detection).
+
+Speech recognition runs on the [`indicconformer-sherpa-onnx`](https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx) exports of the AI4Bharat models, which saved this project from having to export nine languages itself.
