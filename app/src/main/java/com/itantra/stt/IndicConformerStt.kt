@@ -21,6 +21,8 @@ class IndicConformerStt private constructor(
     private val env: OrtEnvironment,
     private val session: OrtSession,
     private val tokens: List<String>,
+    /** Index of the CTC blank. Not always `tokens.size` — see [findBlank]. */
+    private val blankId: Int,
     private val layout: Layout
 ) : SttEngine {
 
@@ -47,8 +49,9 @@ class IndicConformerStt private constructor(
          *   appended automatically if the file does not already end with one.
          */
         fun load(lang: String, modelFile: File, tokensFile: File): IndicConformerStt? = try {
-            val vocab = tokensFile.readLines().map { it.trimEnd('\n', '\r') }.filter { it.isNotEmpty() }
+            val vocab = parseTokens(tokensFile)
             if (vocab.isEmpty()) throw IllegalStateException("Empty token file: ${tokensFile.name}")
+            val blankId = findBlank(vocab)
 
             val env = OrtEnvironment.getEnvironment()
             val opts = OrtSession.SessionOptions().apply {
@@ -66,12 +69,49 @@ class IndicConformerStt private constructor(
             Log.i(
                 TAG,
                 "Loaded '$lang' from ${modelFile.name} (${modelFile.length()} bytes), " +
-                    "vocab=${vocab.size}, layout=$layout"
+                    "vocab=${vocab.size}, blank=$blankId, layout=$layout"
             )
-            IndicConformerStt(lang, env, session, vocab, layout)
+            IndicConformerStt(lang, env, session, vocab, blankId, layout)
         } catch (e: Throwable) {
             Log.e(TAG, "STT_LOAD_FAILED[$lang]: ${e.javaClass.simpleName}: ${e.message}", e)
             null
+        }
+
+        /**
+         * Reads a token list in either published form:
+         *  - `"<symbol> <id>"` per line, as sherpa/NeMo exports ship it, or
+         *  - a bare symbol per line, positionally indexed.
+         *
+         * Mis-detecting this silently shifts every token, so the id form wins whenever
+         * any line carries a trailing integer.
+         */
+        private fun parseTokens(file: File): List<String> {
+            val lines = file.readLines().map { it.trimEnd('\n', '\r') }.filter { it.isNotBlank() }
+            val byId = HashMap<Int, String>(lines.size * 2)
+
+            for (line in lines) {
+                val cut = line.lastIndexOf(' ')
+                if (cut <= 0) continue
+                val id = line.substring(cut + 1).toIntOrNull() ?: continue
+                byId[id] = line.substring(0, cut)
+            }
+
+            if (byId.isEmpty()) return lines
+
+            val size = (byId.keys.maxOrNull() ?: -1) + 1
+            return List(size) { byId[it] ?: "" }
+        }
+
+        /**
+         * Locates the CTC blank. NeMo BPE vocabularies carry it as the last entry
+         * (`<blk>`) *inside* the vocabulary, while some exports append it past the end;
+         * assuming the latter makes the decoder emit a literal "<blk>" in the text.
+         */
+        private fun findBlank(tokens: List<String>): Int {
+            val named = tokens.indexOfFirst {
+                it == "<blk>" || it == "<blank>" || it == "<pad>" || it == "<eps>"
+            }
+            return if (named >= 0) named else tokens.size
         }
 
         /** Works out how to feed this export from its declared input names and shapes. */
@@ -208,7 +248,7 @@ class IndicConformerStt private constructor(
      * such marker, so both are handled.
      */
     private fun greedyCtcDecode(logits: Array<FloatArray>): String {
-        val blank = tokens.size // NeMo appends the blank after the vocabulary
+        val blank = blankId
         val ids = ArrayList<Int>(logits.size)
         var previous = -1
 
@@ -233,7 +273,8 @@ class IndicConformerStt private constructor(
                     if (sb.isNotEmpty()) sb.append(' ')
                     sb.append(token.substring(1))
                 }
-                token == "<unk>" || token == "<pad>" || token == "<s>" || token == "</s>" -> Unit
+                token.isEmpty() || token == "<unk>" || token == "<pad>" ||
+                    token == "<s>" || token == "</s>" || token == "<blk>" -> Unit
                 else -> sb.append(token)
             }
         }

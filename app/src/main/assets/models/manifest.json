@@ -2,23 +2,27 @@
   "_comment": [
     "iTantra language-pack manifest.",
     "",
-    "Source models (AI4Bharat, MIT):",
-    "  STT  IndicConformer-120M  https://huggingface.co/ai4bharat  (.nemo checkpoints)",
-    "  TTS  Indic-TTS FastPitch + HiFi-GAN V1  https://github.com/AI4Bharat/Indic-TTS",
+    "STT — PUBLISHED AND VERIFIED (Apache-2.0):",
+    "  parismitaglobalsolutions/indicconformer-sherpa-onnx",
+    "  int8 ONNX exports of ai4bharat/indicconformer_stt_*_hybrid_ctc_rnnt_large (CTC-only).",
+    "  Graph contract confirmed on 2 Sep 2026: input audio_signal [B,80,T] float32 +",
+    "  length [B] int64; output logprobs [B,T/4,5633]; normalize_type=per_feature;",
+    "  subsampling_factor=4; blank token '<blk>' at id 5632 INSIDE the vocabulary.",
+    "  Odia (or) has no published export — it is the one gap in the 10.",
     "",
-    "Those upstream artifacts are NeMo/PyTorch checkpoints and cannot be run on-device",
-    "as published. Export each to ONNX, quantize to int8, then publish the resulting",
-    "files and fill in 'url' and 'sha256' below. Until both fields are set for a file,",
-    "the Model Manager treats it as unpublished and refuses to install it rather than",
-    "trusting an unverified download (Rules §19).",
+    "TTS — NOT YET PUBLISHED. Upstream AI4Bharat Indic-TTS ships PyTorch checkpoints,",
+    "  not mobile ONNX. Export FastPitch + HiFi-GAN, then fill in url + sha256 below.",
     "",
-    "During development you can skip publishing entirely and sideload instead:",
+    "A file is installable only once BOTH url and sha256 are set; until then the Model",
+    "Manager reports 'Not published' and refuses to install rather than trusting an",
+    "unverified download (Rules §19).",
+    "",
+    "Sideload during development (no publishing needed):",
     "  adb push <file> /sdcard/Android/data/com.itantra/files/models/<lang>/<fileName>",
-    "ModelStore picks those up automatically.",
     "",
-    "sizeBytes is only used to show a download estimate; it is not enforced."
+    "Note: huggingface.co resolved IPv6-only on the dev machine and stalled; the Model",
+    "Manager should be tested on a network where that is not the case."
   ],
-
   "languages": [
     {
       "lang": "hi",
@@ -26,11 +30,46 @@
       "nativeName": "हिन्दी",
       "bundled": true,
       "models": [
-        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-hi.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "STT_TOKENS",   "fileName": "indicconformer-hi.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-hi.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_VOCODER",  "fileName": "hifigan-hi.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_TOKENS",   "fileName": "fastpitch-hi.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+        {
+          "role": "STT_ACOUSTIC",
+          "fileName": "indicconformer-hi.int8.onnx",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/hi/model.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "915c71e04dd7e5378a4057fdebb252b3a587188e4e99db6d7ce0909ad5ad05fa",
+          "sizeBytes": 197595593
+        },
+        {
+          "role": "STT_TOKENS",
+          "fileName": "indicconformer-hi.tokens.txt",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/tokens.txt",
+          "mirrorUrl": "",
+          "sha256": "ee60967630213f31951817ac8b402b92ec18cce80718a24a49b388e56672dfb2",
+          "sizeBytes": 67605
+        },
+        {
+          "role": "TTS_ACOUSTIC",
+          "fileName": "fastpitch-hi.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_VOCODER",
+          "fileName": "hifigan-hi.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_TOKENS",
+          "fileName": "fastpitch-hi.tokens.json",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        }
       ]
     },
     {
@@ -39,11 +78,46 @@
       "nativeName": "English (Indian)",
       "bundled": true,
       "models": [
-        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-en.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "STT_TOKENS",   "fileName": "indicconformer-en.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-en.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_VOCODER",  "fileName": "hifigan-en.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_TOKENS",   "fileName": "fastpitch-en.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+        {
+          "role": "STT_ACOUSTIC",
+          "fileName": "indicconformer-en.int8.onnx",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/en/model.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "28b9261a53028a7c99ff0799f44fb53f19c78b68cc4cf40637ac9c16cb1fbc6f",
+          "sizeBytes": 174610057
+        },
+        {
+          "role": "STT_TOKENS",
+          "fileName": "indicconformer-en.tokens.txt",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/en/tokens.txt",
+          "mirrorUrl": "",
+          "sha256": "89c165b98df7af718ec0e872177279bfad4ade51331f1be92753c9583a1ef30d",
+          "sizeBytes": 11433
+        },
+        {
+          "role": "TTS_ACOUSTIC",
+          "fileName": "fastpitch-en.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_VOCODER",
+          "fileName": "hifigan-en.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_TOKENS",
+          "fileName": "fastpitch-en.tokens.json",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        }
       ]
     },
     {
@@ -52,11 +126,46 @@
       "nativeName": "বাংলা",
       "bundled": false,
       "models": [
-        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-bn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "STT_TOKENS",   "fileName": "indicconformer-bn.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-bn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_VOCODER",  "fileName": "hifigan-bn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_TOKENS",   "fileName": "fastpitch-bn.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+        {
+          "role": "STT_ACOUSTIC",
+          "fileName": "indicconformer-bn.int8.onnx",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/bn/model.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "e9120a534f69df065314be468bf15579f1b92a4cd8c07ad119b80b69244718a8",
+          "sizeBytes": 197595578
+        },
+        {
+          "role": "STT_TOKENS",
+          "fileName": "indicconformer-bn.tokens.txt",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/tokens.txt",
+          "mirrorUrl": "",
+          "sha256": "ee60967630213f31951817ac8b402b92ec18cce80718a24a49b388e56672dfb2",
+          "sizeBytes": 67605
+        },
+        {
+          "role": "TTS_ACOUSTIC",
+          "fileName": "fastpitch-bn.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_VOCODER",
+          "fileName": "hifigan-bn.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_TOKENS",
+          "fileName": "fastpitch-bn.tokens.json",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        }
       ]
     },
     {
@@ -65,11 +174,46 @@
       "nativeName": "ગુજરાતી",
       "bundled": false,
       "models": [
-        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-gu.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "STT_TOKENS",   "fileName": "indicconformer-gu.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-gu.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_VOCODER",  "fileName": "hifigan-gu.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_TOKENS",   "fileName": "fastpitch-gu.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+        {
+          "role": "STT_ACOUSTIC",
+          "fileName": "indicconformer-gu.int8.onnx",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/gu/model.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "822ed7f0b809bbd479275bf91c913d05564b88c0d082bbcba2f37999b88cb598",
+          "sizeBytes": 197595461
+        },
+        {
+          "role": "STT_TOKENS",
+          "fileName": "indicconformer-gu.tokens.txt",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/tokens.txt",
+          "mirrorUrl": "",
+          "sha256": "ee60967630213f31951817ac8b402b92ec18cce80718a24a49b388e56672dfb2",
+          "sizeBytes": 67605
+        },
+        {
+          "role": "TTS_ACOUSTIC",
+          "fileName": "fastpitch-gu.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_VOCODER",
+          "fileName": "hifigan-gu.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_TOKENS",
+          "fileName": "fastpitch-gu.tokens.json",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        }
       ]
     },
     {
@@ -78,11 +222,46 @@
       "nativeName": "ಕನ್ನಡ",
       "bundled": false,
       "models": [
-        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-kn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "STT_TOKENS",   "fileName": "indicconformer-kn.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-kn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_VOCODER",  "fileName": "hifigan-kn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_TOKENS",   "fileName": "fastpitch-kn.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+        {
+          "role": "STT_ACOUSTIC",
+          "fileName": "indicconformer-kn.int8.onnx",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/kn/model.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "b226ce7e4ea35b0dd66991964bd00e011b6b14b0fcdf4f7d1cccd777781c94dc",
+          "sizeBytes": 197595728
+        },
+        {
+          "role": "STT_TOKENS",
+          "fileName": "indicconformer-kn.tokens.txt",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/tokens.txt",
+          "mirrorUrl": "",
+          "sha256": "ee60967630213f31951817ac8b402b92ec18cce80718a24a49b388e56672dfb2",
+          "sizeBytes": 67605
+        },
+        {
+          "role": "TTS_ACOUSTIC",
+          "fileName": "fastpitch-kn.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_VOCODER",
+          "fileName": "hifigan-kn.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_TOKENS",
+          "fileName": "fastpitch-kn.tokens.json",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        }
       ]
     },
     {
@@ -91,11 +270,46 @@
       "nativeName": "മലയാളം",
       "bundled": false,
       "models": [
-        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-ml.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "STT_TOKENS",   "fileName": "indicconformer-ml.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-ml.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_VOCODER",  "fileName": "hifigan-ml.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_TOKENS",   "fileName": "fastpitch-ml.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+        {
+          "role": "STT_ACOUSTIC",
+          "fileName": "indicconformer-ml.int8.onnx",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/ml/model.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "dcbdfa9f773db910508b40b703cb76c5974e8d4c6f123ea81265b40853c3f0c2",
+          "sizeBytes": 197595555
+        },
+        {
+          "role": "STT_TOKENS",
+          "fileName": "indicconformer-ml.tokens.txt",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/tokens.txt",
+          "mirrorUrl": "",
+          "sha256": "ee60967630213f31951817ac8b402b92ec18cce80718a24a49b388e56672dfb2",
+          "sizeBytes": 67605
+        },
+        {
+          "role": "TTS_ACOUSTIC",
+          "fileName": "fastpitch-ml.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_VOCODER",
+          "fileName": "hifigan-ml.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_TOKENS",
+          "fileName": "fastpitch-ml.tokens.json",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        }
       ]
     },
     {
@@ -104,11 +318,46 @@
       "nativeName": "मराठी",
       "bundled": false,
       "models": [
-        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-mr.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "STT_TOKENS",   "fileName": "indicconformer-mr.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-mr.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_VOCODER",  "fileName": "hifigan-mr.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_TOKENS",   "fileName": "fastpitch-mr.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+        {
+          "role": "STT_ACOUSTIC",
+          "fileName": "indicconformer-mr.int8.onnx",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/mr/model.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "1ea81e55c4b9b12624c9d02a5b9c1b6f7c871c78a55ff52d333f81cb5136eaf2",
+          "sizeBytes": 197595593
+        },
+        {
+          "role": "STT_TOKENS",
+          "fileName": "indicconformer-mr.tokens.txt",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/tokens.txt",
+          "mirrorUrl": "",
+          "sha256": "ee60967630213f31951817ac8b402b92ec18cce80718a24a49b388e56672dfb2",
+          "sizeBytes": 67605
+        },
+        {
+          "role": "TTS_ACOUSTIC",
+          "fileName": "fastpitch-mr.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_VOCODER",
+          "fileName": "hifigan-mr.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_TOKENS",
+          "fileName": "fastpitch-mr.tokens.json",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        }
       ]
     },
     {
@@ -117,11 +366,46 @@
       "nativeName": "ଓଡ଼ିଆ",
       "bundled": false,
       "models": [
-        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-or.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "STT_TOKENS",   "fileName": "indicconformer-or.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-or.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_VOCODER",  "fileName": "hifigan-or.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_TOKENS",   "fileName": "fastpitch-or.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+        {
+          "role": "STT_ACOUSTIC",
+          "fileName": "indicconformer-or.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "STT_TOKENS",
+          "fileName": "indicconformer-or.tokens.txt",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_ACOUSTIC",
+          "fileName": "fastpitch-or.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_VOCODER",
+          "fileName": "hifigan-or.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_TOKENS",
+          "fileName": "fastpitch-or.tokens.json",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        }
       ]
     },
     {
@@ -130,11 +414,46 @@
       "nativeName": "தமிழ்",
       "bundled": false,
       "models": [
-        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-ta.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "STT_TOKENS",   "fileName": "indicconformer-ta.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-ta.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_VOCODER",  "fileName": "hifigan-ta.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_TOKENS",   "fileName": "fastpitch-ta.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+        {
+          "role": "STT_ACOUSTIC",
+          "fileName": "indicconformer-ta.int8.onnx",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/ta/model.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "abb7b59d706b8d27ba3fb5e5e3db7671c9e1a09bf7bc6122de507c60030e65fb",
+          "sizeBytes": 197595513
+        },
+        {
+          "role": "STT_TOKENS",
+          "fileName": "indicconformer-ta.tokens.txt",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/tokens.txt",
+          "mirrorUrl": "",
+          "sha256": "ee60967630213f31951817ac8b402b92ec18cce80718a24a49b388e56672dfb2",
+          "sizeBytes": 67605
+        },
+        {
+          "role": "TTS_ACOUSTIC",
+          "fileName": "fastpitch-ta.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_VOCODER",
+          "fileName": "hifigan-ta.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_TOKENS",
+          "fileName": "fastpitch-ta.tokens.json",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        }
       ]
     },
     {
@@ -143,11 +462,46 @@
       "nativeName": "తెలుగు",
       "bundled": false,
       "models": [
-        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-te.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "STT_TOKENS",   "fileName": "indicconformer-te.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-te.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_VOCODER",  "fileName": "hifigan-te.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
-        { "role": "TTS_TOKENS",   "fileName": "fastpitch-te.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+        {
+          "role": "STT_ACOUSTIC",
+          "fileName": "indicconformer-te.int8.onnx",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/te/model.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "710f176e33080f1be84b4f38bb5f33be3f522dcf4f191bf4d5cc89f7a85924f3",
+          "sizeBytes": 197595693
+        },
+        {
+          "role": "STT_TOKENS",
+          "fileName": "indicconformer-te.tokens.txt",
+          "url": "https://huggingface.co/parismitaglobalsolutions/indicconformer-sherpa-onnx/resolve/main/tokens.txt",
+          "mirrorUrl": "",
+          "sha256": "ee60967630213f31951817ac8b402b92ec18cce80718a24a49b388e56672dfb2",
+          "sizeBytes": 67605
+        },
+        {
+          "role": "TTS_ACOUSTIC",
+          "fileName": "fastpitch-te.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_VOCODER",
+          "fileName": "hifigan-te.int8.onnx",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        },
+        {
+          "role": "TTS_TOKENS",
+          "fileName": "fastpitch-te.tokens.json",
+          "url": "",
+          "mirrorUrl": "",
+          "sha256": "",
+          "sizeBytes": 0
+        }
       ]
     }
   ]
