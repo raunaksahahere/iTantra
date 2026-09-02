@@ -54,3 +54,7 @@ lint-results*.xml
 # OS
 .DS_Store
 Thumbs.db
+
+# Python caches (model-export tooling)
+__pycache__/
+*.pyc

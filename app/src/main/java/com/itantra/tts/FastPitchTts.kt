@@ -34,25 +34,8 @@ class FastPitchTts private constructor(
         private val MEL_INPUT_NAMES = listOf("spec", "mel", "input", "x", "mels", "spectrogram")
 
         fun load(lang: String, fastpitchFile: File, hifiganFile: File, tokensFile: File): FastPitchTts? = try {
-            val symbols = tokensFile.readLines()
-                .map { it.trimEnd('\n', '\r') }
-                .filter { it.isNotEmpty() }
-            if (symbols.isEmpty()) throw IllegalStateException("Empty token file: ${tokensFile.name}")
-
-            // A "<symbol> <id>" file pins ids explicitly; a bare list is positional.
-            val map = HashMap<String, Long>(symbols.size * 2)
-            var positional = true
-            for (line in symbols) {
-                val parts = line.split(' ', '\t').filter { it.isNotEmpty() }
-                if (parts.size == 2 && parts[1].toLongOrNull() != null) {
-                    map[parts[0]] = parts[1].toLong()
-                    positional = false
-                }
-            }
-            if (positional) {
-                map.clear()
-                symbols.forEachIndexed { index, symbol -> map[symbol] = index.toLong() }
-            }
+            val map = parseSymbols(tokensFile)
+            if (map.isEmpty()) throw IllegalStateException("Empty token file: ${tokensFile.name}")
 
             val env = OrtEnvironment.getEnvironment()
             val opts = OrtSession.SessionOptions().apply {
@@ -72,6 +55,53 @@ class FastPitchTts private constructor(
         } catch (e: Throwable) {
             Log.e(TAG, "TTS_LOAD_FAILED[$lang]: ${e.javaClass.simpleName}: ${e.message}", e)
             null
+        }
+
+        /**
+         * Reads the symbol table as symbol -> id.
+         *
+         * The preferred form is a JSON array indexed by id. The vocabulary contains a
+         * space, a non-breaking space and zero-width joiners, and JSON is the only one of
+         * these formats that round-trips them unambiguously — a line-per-symbol text file
+         * loses them to blank-line filtering.
+         *
+         * Text forms are still accepted so an externally produced table keeps working:
+         * "<symbol> <id>" pairs, else one symbol per line indexed positionally.
+         */
+        private fun parseSymbols(file: File): Map<String, Long> {
+            val raw = file.readText()
+
+            val trimmed = raw.trimStart()
+            if (trimmed.startsWith("[")) {
+                return try {
+                    val arr = org.json.JSONArray(trimmed)
+                    val map = HashMap<String, Long>(arr.length() * 2)
+                    for (i in 0 until arr.length()) {
+                        val symbol = arr.optString(i, null) ?: continue
+                        // First id wins: duplicates exist (the vocabulary repeats some
+                        // punctuation), and the model was trained against the lower id.
+                        map.putIfAbsent(symbol, i.toLong())
+                    }
+                    map
+                } catch (e: Exception) {
+                    Log.e(TAG, "TOKENS_JSON_PARSE_FAILED[${file.name}]: ${e.message}", e)
+                    emptyMap()
+                }
+            }
+
+            val lines = raw.split('\n').map { it.trimEnd('\r') }.filter { it.isNotEmpty() }
+            val paired = HashMap<String, Long>(lines.size * 2)
+            for (line in lines) {
+                val cut = line.lastIndexOf(' ')
+                if (cut < 0) continue
+                val id = line.substring(cut + 1).toLongOrNull() ?: continue
+                paired.putIfAbsent(line.substring(0, cut), id)
+            }
+            if (paired.isNotEmpty()) return paired
+
+            val positional = HashMap<String, Long>(lines.size * 2)
+            lines.forEachIndexed { index, symbol -> positional.putIfAbsent(symbol, index.toLong()) }
+            return positional
         }
     }
 
