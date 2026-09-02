@@ -1,0 +1,154 @@
+{
+  "_comment": [
+    "iTantra language-pack manifest.",
+    "",
+    "Source models (AI4Bharat, MIT):",
+    "  STT  IndicConformer-120M  https://huggingface.co/ai4bharat  (.nemo checkpoints)",
+    "  TTS  Indic-TTS FastPitch + HiFi-GAN V1  https://github.com/AI4Bharat/Indic-TTS",
+    "",
+    "Those upstream artifacts are NeMo/PyTorch checkpoints and cannot be run on-device",
+    "as published. Export each to ONNX, quantize to int8, then publish the resulting",
+    "files and fill in 'url' and 'sha256' below. Until both fields are set for a file,",
+    "the Model Manager treats it as unpublished and refuses to install it rather than",
+    "trusting an unverified download (Rules §19).",
+    "",
+    "During development you can skip publishing entirely and sideload instead:",
+    "  adb push <file> /sdcard/Android/data/com.itantra/files/models/<lang>/<fileName>",
+    "ModelStore picks those up automatically.",
+    "",
+    "sizeBytes is only used to show a download estimate; it is not enforced."
+  ],
+
+  "languages": [
+    {
+      "lang": "hi",
+      "displayName": "Hindi",
+      "nativeName": "हिन्दी",
+      "bundled": true,
+      "models": [
+        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-hi.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "STT_TOKENS",   "fileName": "indicconformer-hi.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-hi.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_VOCODER",  "fileName": "hifigan-hi.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_TOKENS",   "fileName": "fastpitch-hi.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+      ]
+    },
+    {
+      "lang": "en",
+      "displayName": "English",
+      "nativeName": "English (Indian)",
+      "bundled": true,
+      "models": [
+        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-en.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "STT_TOKENS",   "fileName": "indicconformer-en.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-en.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_VOCODER",  "fileName": "hifigan-en.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_TOKENS",   "fileName": "fastpitch-en.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+      ]
+    },
+    {
+      "lang": "bn",
+      "displayName": "Bengali",
+      "nativeName": "বাংলা",
+      "bundled": false,
+      "models": [
+        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-bn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "STT_TOKENS",   "fileName": "indicconformer-bn.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-bn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_VOCODER",  "fileName": "hifigan-bn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_TOKENS",   "fileName": "fastpitch-bn.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+      ]
+    },
+    {
+      "lang": "gu",
+      "displayName": "Gujarati",
+      "nativeName": "ગુજરાતી",
+      "bundled": false,
+      "models": [
+        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-gu.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "STT_TOKENS",   "fileName": "indicconformer-gu.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-gu.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_VOCODER",  "fileName": "hifigan-gu.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_TOKENS",   "fileName": "fastpitch-gu.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+      ]
+    },
+    {
+      "lang": "kn",
+      "displayName": "Kannada",
+      "nativeName": "ಕನ್ನಡ",
+      "bundled": false,
+      "models": [
+        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-kn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "STT_TOKENS",   "fileName": "indicconformer-kn.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-kn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_VOCODER",  "fileName": "hifigan-kn.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_TOKENS",   "fileName": "fastpitch-kn.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+      ]
+    },
+    {
+      "lang": "ml",
+      "displayName": "Malayalam",
+      "nativeName": "മലയാളം",
+      "bundled": false,
+      "models": [
+        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-ml.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "STT_TOKENS",   "fileName": "indicconformer-ml.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-ml.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_VOCODER",  "fileName": "hifigan-ml.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_TOKENS",   "fileName": "fastpitch-ml.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+      ]
+    },
+    {
+      "lang": "mr",
+      "displayName": "Marathi",
+      "nativeName": "मराठी",
+      "bundled": false,
+      "models": [
+        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-mr.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "STT_TOKENS",   "fileName": "indicconformer-mr.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-mr.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_VOCODER",  "fileName": "hifigan-mr.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_TOKENS",   "fileName": "fastpitch-mr.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+      ]
+    },
+    {
+      "lang": "or",
+      "displayName": "Odia",
+      "nativeName": "ଓଡ଼ିଆ",
+      "bundled": false,
+      "models": [
+        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-or.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "STT_TOKENS",   "fileName": "indicconformer-or.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-or.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_VOCODER",  "fileName": "hifigan-or.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_TOKENS",   "fileName": "fastpitch-or.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+      ]
+    },
+    {
+      "lang": "ta",
+      "displayName": "Tamil",
+      "nativeName": "தமிழ்",
+      "bundled": false,
+      "models": [
+        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-ta.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "STT_TOKENS",   "fileName": "indicconformer-ta.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-ta.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_VOCODER",  "fileName": "hifigan-ta.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_TOKENS",   "fileName": "fastpitch-ta.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+      ]
+    },
+    {
+      "lang": "te",
+      "displayName": "Telugu",
+      "nativeName": "తెలుగు",
+      "bundled": false,
+      "models": [
+        { "role": "STT_ACOUSTIC", "fileName": "indicconformer-te.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "STT_TOKENS",   "fileName": "indicconformer-te.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_ACOUSTIC", "fileName": "fastpitch-te.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_VOCODER",  "fileName": "hifigan-te.int8.onnx", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 },
+        { "role": "TTS_TOKENS",   "fileName": "fastpitch-te.tokens.txt", "url": "", "mirrorUrl": "", "sha256": "", "sizeBytes": 0 }
+      ]
+    }
+  ]
+}
