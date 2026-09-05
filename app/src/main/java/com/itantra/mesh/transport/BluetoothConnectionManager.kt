@@ -224,6 +224,13 @@ class BluetoothConnectionManager(
             return false
         }
         
+        // Report the full discovery picture once at start, before anything can fail quietly.
+        // A missing permission and an off Location toggle both end in an empty peer list, and
+        // this is the line that says which one you are looking at.
+        val readiness = permissionManager.readiness()
+        Log.i(BleDiagnostics.TAG, "START readiness: ${readiness.summary()}")
+        BleDiagnostics.startHeartbeat(connectionScope, context)
+
         if (!permissionManager.hasBluetoothPermissions()) {
             Log.e(TAG, "Missing Bluetooth permissions")
             return false
@@ -309,6 +316,11 @@ class BluetoothConnectionManager(
      */
     fun stopServices() {
         isActive = false
+
+        // BleDiagnostics is a singleton, so its heartbeat outlives this manager unless it is
+        // stopped explicitly. Cancelling connectionScope below kills the job but leaves the
+        // reference stale, and a later restart would then be reasoning against a dead handle.
+        BleDiagnostics.stopHeartbeat()
 
         connectionScope.launch {
             // Stop component managers
@@ -471,6 +483,7 @@ class BluetoothConnectionManager(
             appendLine("Active: $isActive")
             appendLine("Bluetooth Enabled: ${bluetoothAdapter?.isEnabled}")
             appendLine("Has Permissions: ${permissionManager.hasBluetoothPermissions()}")
+            appendLine("Discovery readiness: ${permissionManager.readiness().summary()}")
             appendLine("GATT Server Active: ${serverManager.getGattServer() != null}")
             appendLine()
             appendLine(powerManager.getPowerInfo())

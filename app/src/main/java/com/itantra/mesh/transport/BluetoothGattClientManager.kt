@@ -183,15 +183,43 @@ class BluetoothGattClientManager(
      */
     @Suppress("DEPRECATION")
     private fun startScanning() {
-        // Respect debug setting
+        // Respect debug setting. Each guard reports its own reason: "scan not started" with a
+        // row of booleans still leaves you guessing which one was false.
         val enabled = isClientRoleEnabled()
-        if (!permissionManager.hasBluetoothPermissions() || bleScanner == null || !isActive || !enabled) {
-            Log.w(TAG, "Scan not started: permissions=${permissionManager.hasBluetoothPermissions()}, scanner=${bleScanner != null}, active=$isActive, enabled=$enabled")
+        if (!isActive) {
+            BleDiagnostics.scanBlocked("client manager not active")
+            return
+        }
+        if (!enabled) {
+            BleDiagnostics.scanBlocked("BLE/GATT client disabled in debug settings")
+            return
+        }
+        if (!permissionManager.hasBluetoothPermissions()) {
+            BleDiagnostics.scanBlocked(
+                "missing permissions: " +
+                    permissionManager.missingPermissions().joinToString { it.substringAfterLast('.') }
+            )
+            return
+        }
+        if (bleScanner == null) {
+            BleDiagnostics.scanBlocked("BluetoothLeScanner unavailable")
             return
         }
         if (bluetoothAdapter?.isEnabled != true) {
-            Log.w(TAG, "Scan not started: Bluetooth adapter enabled=${bluetoothAdapter?.isEnabled}")
+            BleDiagnostics.scanBlocked("Bluetooth adapter is off")
             return
+        }
+
+        // The scan is still started below when this fails: startScan() will succeed, no
+        // onScanFailed will fire, and zero results will ever be delivered. Logging it here is
+        // the only warning that separates that from an empty room.
+        val readiness = permissionManager.readiness()
+        if (!readiness.canScan) {
+            Log.e(
+                BleDiagnostics.TAG,
+                "SCAN preconditions NOT met — results will be silently withheld by the platform: " +
+                    readiness.summary()
+            )
         }
         
         // Rate limit scan starts to prevent "scanning too frequently" errors
@@ -233,6 +261,7 @@ class BluetoothGattClientManager(
             override fun onScanFailed(errorCode: Int) {
                 isCurrentlyScanning = false
                 lastScanStopTime = System.currentTimeMillis()
+                BleDiagnostics.scanFailed(errorCode)
 
                 when (errorCode) {
                     1 -> {
@@ -271,9 +300,13 @@ class BluetoothGattClientManager(
             isCurrentlyScanning = true
             
             bleScanner.startScan(scanFilters, powerManager.getScanSettings(), scanCallback)
+            BleDiagnostics.scanRequested(
+                filtered = scanFilters.isNotEmpty(),
+                scanMode = powerManager.profile.value.mode.name
+            )
             Log.i(TAG, "BLE scan started (raw results; expected UUID=${AppConstants.Mesh.Gatt.SERVICE_UUID})")
         } catch (e: Exception) {
-            Log.e(TAG, "Exception starting scan: ${e.message}")
+            BleDiagnostics.scanStartThrew(e.message)
             isCurrentlyScanning = false
         }
     }
@@ -289,7 +322,7 @@ class BluetoothGattClientManager(
             try {
                 scanCallback?.let {
                     bleScanner.stopScan(it)
-                    Log.i(TAG, "BLE scan stopped")
+                    BleDiagnostics.scanStopped("stopScan() called")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Error stopping scan: ${e.message}")
@@ -382,13 +415,26 @@ class BluetoothGattClientManager(
         
         // CRITICAL: Only process devices that have our service UUID
         val hasOurService = scanRecord?.serviceUuids?.any { it.uuid == AppConstants.Mesh.Gatt.SERVICE_UUID } == true
-        Log.d(TAG, "Raw BLE result: address=$deviceAddress rssi=$rssi name=${device.name ?: "unknown"} uuids=$advertisedUuids matchesBitchat=$hasOurService")
+
+        // Recorded before the filter below, so "nothing nearby was heard" stays distinguishable
+        // from "something was heard and our own filter threw it away".
+        BleDiagnostics.rawScanResult(
+            address = deviceAddress,
+            name = try { device.name } catch (_: SecurityException) { null },
+            rssi = rssi,
+            advertisedUuids = advertisedUuids,
+            matched = hasOurService
+        )
+
+        // Any result at all proves the callback is alive, which is what the watchdog checks.
+        // Gating this on hasOurService made a healthy scanner in a room with no iTantra
+        // peers look wedged, and triggered a pointless forced restart every two minutes.
+        lastScanResultTime = System.currentTimeMillis()
+
         if (!hasOurService) {
             return
         }
 
-        // Proof the scanner is alive and finding our network: refresh liveness and clear backoff.
-        lastScanResultTime = System.currentTimeMillis()
         scanRetryCount = 0
 
         // Try to extract peerID from Service Data (if available) for stable identity

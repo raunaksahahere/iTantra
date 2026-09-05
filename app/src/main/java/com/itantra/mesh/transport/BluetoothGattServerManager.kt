@@ -359,32 +359,41 @@ class BluetoothGattServerManager(
         // Respect debug setting
         val enabled = isServerRoleEnabled()
 
-        // Guard conditions – never throw here to avoid crashing the app from a background coroutine
+        // Guard conditions – never throw here to avoid crashing the app from a background
+        // coroutine. Every one of these leaves the phone undiscoverable, so every one says so:
+        // the !isActive path used to return in silence, which looked identical to advertising
+        // that had started fine.
         if (!permissionManager.hasBluetoothPermissions()) {
-            Log.w(TAG, "Not starting advertising: missing Bluetooth permissions")
+            BleDiagnostics.advertiseBlocked(
+                "missing permissions: " +
+                    permissionManager.missingPermissions().joinToString { it.substringAfterLast('.') }
+            )
             return
         }
         if (bluetoothAdapter == null) {
-            Log.w(TAG, "Not starting advertising: bluetoothAdapter is null")
+            BleDiagnostics.advertiseBlocked("bluetoothAdapter is null")
+            return
+        }
+        if (!bluetoothAdapter.isEnabled) {
+            BleDiagnostics.advertiseBlocked("Bluetooth adapter is off")
             return
         }
         if (!isActive) {
+            BleDiagnostics.advertiseBlocked("server manager not active")
             return
         }
         if (!enabled) {
-            Log.d(TAG, "Not starting advertising: GATT Server disabled via debug settings")
+            BleDiagnostics.advertiseBlocked("GATT server disabled via debug settings")
             return
         }
         if (bleAdvertiser == null) {
-            Log.w(TAG, "Not starting advertising: BLE advertiser not available on this device")
+            BleDiagnostics.advertiseBlocked("BLE advertiser not available on this device")
             return
         }
         if (!bluetoothAdapter.isMultipleAdvertisementSupported) {
-            Log.w(TAG, "Not starting advertising: multiple advertisement not supported on this device")
+            BleDiagnostics.advertiseBlocked("multiple advertisement not supported on this device")
             return
         }
-
-        Log.i(TAG, "Starting BLE advertising: adapterEnabled=${bluetoothAdapter.isEnabled}, expected UUID=${AppConstants.Mesh.Gatt.SERVICE_UUID}")
 
         val settings = powerManager.getAdvertiseSettings()
         
@@ -411,14 +420,11 @@ class BluetoothGattServerManager(
         advertiseCallback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
                 advertiseRetryCount = 0
-                val mode = try {
-                    powerManager.getPowerInfo().split("Current Mode: ")[1].split("\n")[0]
-                } catch (_: Exception) { "unknown" }
-                Log.i(TAG, "Advertising started (power mode: $mode, UUID=${AppConstants.Mesh.Gatt.SERVICE_UUID})")
+                BleDiagnostics.advertiseStarted(powerManager.profile.value.mode.name)
             }
 
             override fun onStartFailure(errorCode: Int) {
-                Log.e(TAG, "Advertising failed: $errorCode")
+                BleDiagnostics.advertiseFailed(errorCode)
                 // Previously this only logged, so if advertising failed this device became
                 // undiscoverable until a manual BLE toggle. Retry transient failures with backoff.
                 when (errorCode) {
@@ -439,11 +445,15 @@ class BluetoothGattServerManager(
         }
         
         try {
+            BleDiagnostics.advertiseRequested(
+                serviceUuid = AppConstants.Mesh.Gatt.SERVICE_UUID,
+                mode = powerManager.profile.value.mode.name
+            )
             bleAdvertiser.startAdvertising(settings, data, scanResponse, advertiseCallback)
         } catch (se: SecurityException) {
-            Log.e(TAG, "SecurityException starting advertising (missing permission?): ${se.message}")
+            BleDiagnostics.advertiseBlocked("SecurityException (missing permission?): ${se.message}")
         } catch (e: Exception) {
-            Log.e(TAG, "Exception starting advertising: ${e.message}")
+            BleDiagnostics.advertiseBlocked("startAdvertising threw: ${e.message}")
         }
     }
     
@@ -454,9 +464,15 @@ class BluetoothGattServerManager(
     private fun stopAdvertising() {
         if (!permissionManager.hasBluetoothPermissions() || bleAdvertiser == null) return
         try {
-            advertiseCallback?.let { cb -> bleAdvertiser.stopAdvertising(cb) }
+            advertiseCallback?.let { cb ->
+                bleAdvertiser.stopAdvertising(cb)
+                BleDiagnostics.advertiseStopped("stopAdvertising() called")
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Error stopping advertising: ${e.message}")
+        } finally {
+            // Dropped so a restart cannot hand the stack a callback it already retired.
+            advertiseCallback = null
         }
     }
     

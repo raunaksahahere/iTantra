@@ -37,6 +37,8 @@ import android.provider.Settings
 import android.os.Build
 import com.itantra.identity.IdentityManager
 import com.itantra.mesh.ITantraMeshManager
+import com.itantra.mesh.transport.BleBlocker
+import com.itantra.mesh.transport.BleReadiness
 import com.itantra.models.ModelCatalog
 import com.itantra.schema.ITantraMessage
 import com.itantra.schema.MessageType
@@ -51,6 +53,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -280,7 +283,16 @@ fun TransceiverScreen(
                 onSelectPeer = { selectedPeerId = it }
             )
 
-            BatteryOptimizationNotice()
+            // Why discovery cannot work, if it cannot. A revoked permission or an off Location
+            // toggle stops the mesh outright, while the MIUI warning is about staying alive once
+            // it is already running — so only one of the two is ever worth showing, and it is
+            // this one. Stacking both put two full-width warning bars above the transcript and
+            // pointed the user at the less important fix.
+            val meshBlocked = MeshReadinessNotice()
+
+            if (!meshBlocked) {
+                BatteryOptimizationNotice()
+            }
 
             // Live distress announcements this device is holding and relaying.
             if (sosAnnouncements.isNotEmpty()) {
@@ -401,8 +413,8 @@ fun TransceiverScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // Typed Text Input Row
@@ -775,7 +787,7 @@ private fun ConnectedPeersHeader(
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -801,9 +813,8 @@ private fun ConnectedPeersHeader(
                 Text(
                     text = "Scanning for nearby iTantra nodes over the BLE mesh.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextMuted,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(vertical = 6.dp)
+                    color = TextSecondary,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             } else {
                 // Search stays enabled whenever there are peers to search. It used to be
@@ -902,8 +913,7 @@ private fun PeerChip(peer: Peer, selected: Boolean, onClick: () -> Unit) {
                 Text(
                     text = peer.deviceModel.ifEmpty { "Node ${peer.peerId.take(4)}" },
                     style = MaterialTheme.typography.labelSmall,
-                    color = TextMuted,
-                    fontSize = 9.sp
+                    color = TextSecondary
                 )
             }
 
@@ -915,9 +925,9 @@ private fun PeerChip(peer: Peer, selected: Boolean, onClick: () -> Unit) {
                 border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.5f))
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     if (isDirect) {
                         Box(
@@ -930,8 +940,7 @@ private fun PeerChip(peer: Peer, selected: Boolean, onClick: () -> Unit) {
                             text = "Direct",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = accent,
-                            fontSize = 9.sp
+                            color = accent
                         )
                     } else {
                         Icon(
@@ -944,8 +953,7 @@ private fun PeerChip(peer: Peer, selected: Boolean, onClick: () -> Unit) {
                             text = "${peer.hops}",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = accent,
-                            fontSize = 9.sp
+                            color = accent
                         )
                     }
                 }
@@ -1164,6 +1172,116 @@ private fun TargetedRecipientStrip(peer: Peer, onClear: () -> Unit) {
                 Icon(Icons.Default.Close, contentDescription = "Send to everyone instead", tint = TextMuted, modifier = Modifier.size(16.dp))
             }
         }
+    }
+}
+
+/**
+ * Says out loud why the peer list is empty when the cause is on this phone.
+ *
+ * Android withholds BLE scan results entirely when location permission is missing or the system
+ * Location toggle is off — no callback, no error, just nothing — so without this the screen shows
+ * "Scanning for nearby iTantra nodes" forever and blames the mesh for a settings problem.
+ *
+ * Polled rather than observed: the user fixes these in system settings and comes back, and there
+ * is no single broadcast covering permission grants, the Location toggle and the Bluetooth
+ * adapter together.
+ */
+@Composable
+private fun MeshReadinessNotice(): Boolean {
+    val context = LocalContext.current
+    var report by remember { mutableStateOf(BleReadiness.check(context)) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(2000)
+            report = BleReadiness.check(context)
+        }
+    }
+
+    val blocker = report.blockers.firstOrNull() ?: return false
+
+    val action: (() -> Unit)? = when (blocker) {
+        BleBlocker.NO_BLE_HARDWARE -> null
+        BleBlocker.BLUETOOTH_OFF -> {
+            { context.openSettings(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+        }
+        BleBlocker.LOCATION_SERVICES_OFF -> {
+            { context.openSettings(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }
+        }
+        else -> {
+            {
+                context.openSettings(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                )
+            }
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = AccentAlert.copy(alpha = 0.12f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, AccentAlert.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = when (blocker) {
+                    BleBlocker.LOCATION_SERVICES_OFF, BleBlocker.MISSING_LOCATION_PERMISSION ->
+                        Icons.Default.LocationOff
+                    BleBlocker.BLUETOOTH_OFF -> Icons.Default.BluetoothDisabled
+                    else -> Icons.Default.ErrorOutline
+                },
+                contentDescription = null,
+                tint = AccentAlert,
+                modifier = Modifier.size(20.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = blocker.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Text(
+                    text = blocker.detail,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
+                if (report.blockers.size > 1) {
+                    Text(
+                        text = "+${report.blockers.size - 1} more to fix",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted
+                    )
+                }
+            }
+            if (action != null) {
+                TextButton(onClick = action) {
+                    Text("Fix", color = AccentAlert, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    return true
+}
+
+/** Opens a settings screen, tolerating devices that do not expose the exact activity. */
+private fun android.content.Context.openSettings(intent: Intent) {
+    try {
+        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) {
+        android.util.Log.e("MeshReadiness", "SETTINGS_OPEN_FAILED: ${e.message}", e)
+        try {
+            startActivity(
+                Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: Exception) { }
     }
 }
 

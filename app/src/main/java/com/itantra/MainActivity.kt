@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.itantra.identity.IdentityManager
 import com.itantra.mesh.ITantraMeshManager
+import com.itantra.mesh.transport.BleReadiness
 import com.itantra.mesh.service.MeshForegroundService
 import com.itantra.ui.languages.LanguagePacksScreen
 import com.itantra.ui.onboarding.OnboardingScreen
@@ -132,7 +133,15 @@ class MainActivity : ComponentActivity() {
             permissions.add(Manifest.permission.BLUETOOTH_SCAN)
             permissions.add(Manifest.permission.BLUETOOTH_ADVERTISE)
             permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
-        } else {
+        }
+
+        // Location is requested on every API level, not just pre-31. BLUETOOTH_SCAN is declared
+        // without `neverForLocation`, so Android treats our scans as location-deriving and
+        // withholds every scan result until location permission is granted — silently, with no
+        // callback and no error. Asking only below API 31 left Android 12+ phones scanning into
+        // the void. BleReadiness.isLocationRequiredForScan follows the manifest flag, so this
+        // stays correct if that flag is ever added.
+        if (BleReadiness.isLocationRequiredForScan(this)) {
             permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
             permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
@@ -163,6 +172,11 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
         Log.i(TAG, "BLE runtime permission check: ${if (missing.isEmpty()) "all granted" else "missing $missing"}")
+
+        // Mesh start is gated on the Bluetooth permissions only: without location this phone can
+        // still advertise and serve GATT, so half a mesh beats none. The missing half is surfaced
+        // on screen by MeshReadinessNotice instead of silently degrading.
+        Log.i(TAG, "Discovery readiness: ${BleReadiness.check(this).summary()}")
         return missing.isEmpty()
     }
 }
