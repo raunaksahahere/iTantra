@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
+import android.util.Log
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
@@ -46,6 +48,7 @@ import com.itantra.schema.Peer
 import com.itantra.schema.VoicePreferences
 import com.itantra.stt.SttManager
 import com.itantra.stt.SttUnavailable
+import com.itantra.translate.TranslationManager
 import com.itantra.tts.TtsManager
 import com.itantra.ui.theme.*
 import android.Manifest
@@ -63,6 +66,8 @@ import java.util.*
 fun TransceiverScreen(
     meshManager: ITantraMeshManager,
     identityManager: IdentityManager,
+    peer: Peer,
+    onBack: () -> Unit,
     onOpenLanguages: () -> Unit
 ) {
     val context = LocalContext.current
@@ -73,6 +78,7 @@ fun TransceiverScreen(
     val voicePrefs = remember { VoicePreferences.getInstance(context) }
     val sttManager = remember { SttManager(context) }
     val ttsManager = remember { TtsManager(context) }
+    val translationManager = remember { TranslationManager(context) }
 
     val enabledLanguages by voicePrefs.enabledLanguages.collectAsState()
     val selectedLanguage by voicePrefs.activeLanguage.collectAsState()
@@ -82,6 +88,13 @@ fun TransceiverScreen(
     val sosAnnouncements by meshManager.sos.announcements.collectAsState()
 
     var messages by remember { mutableStateOf(listOf<ITantraMessage>()) }
+
+    // Translation outcome per message id. Kept beside the list rather than inside
+    // ITantraMessage because it is this reader's view of a packet, not part of the
+    // packet: the same broadcast resolves differently on every phone that hears it.
+    var translations by remember {
+        mutableStateOf(mapOf<String, TranslationManager.Outcome>())
+    }
     var typedText by remember { mutableStateOf("") }
     var isAlertMode by remember { mutableStateOf(false) }
     var isBypassMode by remember { mutableStateOf(false) }
@@ -90,7 +103,12 @@ fun TransceiverScreen(
 
     // When set, messages are addressed to this peer and routed hop-by-hop instead of
     // being broadcast to the whole mesh (§4.3 targeted ranged messaging).
-    var selectedPeerId by remember { mutableStateOf<String?>(null) }
+    // This screen is a conversation *with one peer*, so the target is fixed by
+    // navigation rather than chosen here. It is never cleared to null: null means
+    // "broadcast", and silently turning a private message into a broadcast because the
+    // recipient walked out of range is exactly the wrong failure.
+    val selectedPeerId = peer.peerId
+    val peerPresent = connectedPeers.any { it.peerId == peer.peerId }
     var showSosDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
@@ -106,25 +124,31 @@ fun TransceiverScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasMicPermission = granted }
 
-    // Drop a target that has left the mesh, so messages do not silently go nowhere.
-    LaunchedEffect(connectedPeers) {
-        val id = selectedPeerId
-        if (id != null && connectedPeers.none { it.peerId == id }) {
-            selectedPeerId = null
-        }
-    }
 
     // Release model memory when the screen goes away (Rules §9).
     DisposableEffect(Unit) {
         onDispose {
             sttManager.release()
             ttsManager.release()
+            translationManager.release()
         }
     }
 
     // Listen to incoming messages over the mesh
     LaunchedEffect(Unit) {
         meshManager.incomingMessages.collect { msg ->
+            // This screen is one conversation, so it shows that conversation: traffic
+            // from this peer, plus our own. Distress is the deliberate exception — it is
+            // addressed to everyone in range, and hiding it because the reader happens to
+            // have a chat open is not a trade worth making in an emergency.
+            val emergency = msg.isAlert ||
+                msg.type == MessageType.ALERT ||
+                msg.type == MessageType.SOS ||
+                msg.type == MessageType.SOS_RESOLVED
+            val mine = msg.senderId == identity?.peerId
+            if (!emergency && !mine && msg.senderId != peer.peerId) {
+                return@collect
+            }
             messages = messages + msg
             coroutineScope.launch {
                 listState.animateScrollToItem((messages.size - 1).coerceAtLeast(0))
@@ -132,9 +156,37 @@ fun TransceiverScreen(
             // Read incoming traffic aloud. Alerts always speak; ordinary messages only
             // when auto-speak is on. A missing voice is logged, never fatal (Rules §7).
             val isAlert = msg.isAlert || msg.type == MessageType.ALERT
-            if (isAlert || autoSpeak) {
-                coroutineScope.launch {
-                    ttsManager.speak(msg.text, selectedLanguage, alert = isAlert)
+            coroutineScope.launch {
+                // Translate into *this* phone's language before speaking. The sender
+                // transmitted in its own language and deliberately did not translate, so
+                // that one broadcast can reach speakers of several languages at once —
+                // each phone resolves it locally. Same-language traffic short-circuits
+                // inside the manager and never touches a model.
+                val outcome = translationManager.translate(
+                    text = msg.text,
+                    source = msg.srcLang,
+                    target = selectedLanguage
+                )
+                translations = translations + (msg.msgId to outcome)
+
+                if (isAlert || autoSpeak) {
+                    // Speak whatever the reader is actually shown. Speaking the original
+                    // with the local voice is how Hindi text ends up read aloud by an
+                    // English voice, which is worse than staying silent.
+                    val spoken = when (outcome) {
+                        is TranslationManager.Outcome.Translated -> outcome.text
+                        is TranslationManager.Outcome.NotNeeded -> outcome.text
+                        is TranslationManager.Outcome.Failed -> null
+                    }
+                    if (spoken != null) {
+                        ttsManager.speak(spoken, selectedLanguage, alert = isAlert)
+                    } else {
+                        Log.w(
+                            "Transceiver",
+                            "not speaking ${msg.msgId}: no ${msg.srcLang}->$selectedLanguage " +
+                                "translation, and the local voice cannot read ${msg.srcLang}"
+                        )
+                    }
                 }
             }
         }
@@ -200,6 +252,15 @@ fun TransceiverScreen(
                             text = "${identity?.displayName.orEmpty()} (${identity?.deviceModel.orEmpty()})",
                             style = MaterialTheme.typography.labelSmall,
                             color = AccentSaffronDeep
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back to people",
+                            tint = TextSecondary
                         )
                     }
                 },
@@ -276,11 +337,11 @@ fun TransceiverScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Connected Peers Strip
-            ConnectedPeersHeader(
-                peers = connectedPeers,
-                selectedPeerId = selectedPeerId,
-                onSelectPeer = { selectedPeerId = it }
+            // Who this conversation is with, and whether they are still reachable.
+            // Losing the peer does not silently widen the audience — it says so.
+            PeerPresenceStrip(
+                peer = connectedPeers.firstOrNull { it.peerId == peer.peerId } ?: peer,
+                present = peerPresent
             )
 
             // Why discovery cannot work, if it cannot. A revoked permission or an off Location
@@ -303,13 +364,6 @@ fun TransceiverScreen(
                 )
             }
 
-            // Shows who a targeted message will go to, and how it will get there.
-            selectedPeerId?.let { id ->
-                val target = connectedPeers.firstOrNull { it.peerId == id }
-                if (target != null) {
-                    TargetedRecipientStrip(target) { selectedPeerId = null }
-                }
-            }
 
             // Alert Mode Banner
             AnimatedVisibility(visible = isAlertMode) {
@@ -388,10 +442,13 @@ fun TransceiverScreen(
                     MessageBubble(
                         message = msg,
                         isMine = msg.senderId == identity?.peerId,
+                        translation = translations[msg.msgId],
                         onReadAloud = {
                             coroutineScope.launch {
                                 ttsManager.speak(
-                                    text = msg.text,
+                                    text = (translations[msg.msgId] as?
+                                        TranslationManager.Outcome.Translated)?.text
+                                        ?: msg.text,
                                     lang = selectedLanguage,
                                     alert = msg.isAlert || msg.type == MessageType.ALERT
                                 )
@@ -673,6 +730,14 @@ fun TransceiverScreen(
     }
 }
 
+/** Small holder so the status branches below can destructure in one expression. */
+private data class Quad(
+    val accent: Color,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val label: String,
+    val detail: String
+)
+
 @Composable
 private fun SpeechStatusBar(state: SttManager.State, onOpenLanguages: () -> Unit) {
     val visible = state !is SttManager.State.Idle
@@ -751,224 +816,6 @@ private fun SpeechStatusBar(state: SttManager.State, onOpenLanguages: () -> Unit
     }
 }
 
-/** Small holder so the status branches above can destructure in one expression. */
-private data class Quad(
-    val accent: Color,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-    val label: String,
-    val detail: String
-)
-
-@Composable
-private fun ConnectedPeersHeader(
-    peers: List<Peer>,
-    selectedPeerId: String?,
-    onSelectPeer: (String?) -> Unit
-) {
-    var query by remember { mutableStateOf("") }
-
-    // Match on name, device model and peer ID: in a crowd the display name is often the
-    // least distinctive thing about a node.
-    val filteredPeers = remember(peers, query) {
-        val q = query.trim()
-        if (q.isEmpty()) peers
-        else peers.filter {
-            it.name.contains(q, ignoreCase = true) ||
-                it.deviceModel.contains(q, ignoreCase = true) ||
-                it.peerId.contains(q, ignoreCase = true)
-        }
-    }
-
-    val directCount = peers.count { it.hops <= 1 }
-    val relayedCount = peers.size - directCount
-
-    Surface(
-        color = SurfaceCard,
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Hub,
-                    contentDescription = null,
-                    tint = AccentCyan,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = buildString {
-                        append("NEARBY PEERS (${peers.size})")
-                        if (relayedCount > 0) append("  •  $directCount direct, $relayedCount relayed")
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = TextSecondary
-                )
-            }
-
-            if (peers.isEmpty()) {
-                Text(
-                    text = "Scanning for nearby iTantra nodes over the BLE mesh.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            } else {
-                // Search stays enabled whenever there are peers to search. It used to be
-                // gated on a peer list that was always empty, which made it look broken.
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    singleLine = true,
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = AccentCyan)
-                    },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { query = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear search", tint = TextMuted)
-                            }
-                        }
-                    },
-                    placeholder = { Text("Search by name, model or ID", color = TextMuted) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentSaffron,
-                        unfocusedBorderColor = BorderSubtle,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedContainerColor = SurfaceVariantBg,
-                        unfocusedContainerColor = SurfaceVariantBg
-                    )
-                )
-
-                if (filteredPeers.isEmpty()) {
-                    Text(
-                        text = "No peer matches \"${query.trim()}\".",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextMuted,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                } else {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(vertical = 8.dp)
-                    ) {
-                        items(filteredPeers, key = { it.peerId }) { peer ->
-                            PeerChip(
-                                peer = peer,
-                                selected = peer.peerId == selectedPeerId,
-                                onClick = {
-                                    onSelectPeer(if (peer.peerId == selectedPeerId) null else peer.peerId)
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * One peer, tagged with how far away it is. "Direct" means a live BLE link; a number is
- * how many relay hops the mesh gossip says it takes to reach them.
- *
- * Tapping selects the peer as the message recipient, which is what turns an ordinary
- * broadcast into a targeted ranged message.
- */
-@Composable
-private fun PeerChip(peer: Peer, selected: Boolean, onClick: () -> Unit) {
-    val isDirect = peer.hops <= 1
-    val accent = if (isDirect) AccentEmerald else AccentChakra
-
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) BubbleMine else SurfaceVariantBg,
-        border = androidx.compose.foundation.BorderStroke(
-            if (selected) 2.dp else 1.dp,
-            if (selected) AccentSaffron else PeerBadgeBorder
-        ),
-        modifier = Modifier.clickable { onClick() }
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Column {
-                Text(
-                    text = peer.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
-                Text(
-                    text = peer.deviceModel.ifEmpty { "Node ${peer.peerId.take(4)}" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary
-                )
-            }
-
-            // Hop badge: "Direct" for a live link, otherwise the hop count with an
-            // antenna icon to signal it is reached through other phones.
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = accent.copy(alpha = 0.14f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.5f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    if (isDirect) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(accent)
-                        )
-                        Text(
-                            text = "Direct",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = accent
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.SettingsInputAntenna,
-                            contentDescription = "Relayed",
-                            tint = accent,
-                            modifier = Modifier.size(10.dp)
-                        )
-                        Text(
-                            text = "${peer.hops}",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = accent
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-/**
- * Distress announcements currently held by this device.
- *
- * Location is intentionally not shown here — it is revealed only when the reader taps
- * into an announcement, alongside their own position so the two can be compared.
- */
 @Composable
 private fun SosBanner(
     announcements: List<com.itantra.mesh.SosManager.Active>,
@@ -1144,33 +991,46 @@ private fun SosConfirmDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit)
     )
 }
 
-/** Shows the peer a targeted message will be routed to, and how far away they are. */
+/**
+ * Says who this conversation is with and whether they are still reachable.
+ *
+ * There is no "clear target" affordance any more: with a peer-first home screen, a
+ * conversation without a peer has no meaning, and clearing the target used to mean
+ * "broadcast to everyone" — far too easy to hit by accident.
+ */
 @Composable
-private fun TargetedRecipientStrip(peer: Peer, onClear: () -> Unit) {
+private fun PeerPresenceStrip(peer: Peer, present: Boolean) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = BubbleMine,
-        border = androidx.compose.foundation.BorderStroke(1.dp, AccentSaffron.copy(alpha = 0.5f))
+        color = if (present) BubbleMine else SurfaceVariantBg,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (present) AccentSaffron.copy(alpha = 0.5f) else BorderSubtle
+        )
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(Icons.Default.AlternateEmail, contentDescription = null, tint = AccentSaffronDeep, modifier = Modifier.size(16.dp))
+            Icon(
+                Icons.Default.AlternateEmail,
+                contentDescription = null,
+                tint = if (present) AccentSaffronDeep else TextMuted,
+                modifier = Modifier.size(16.dp)
+            )
             Text(
-                text = buildString {
-                    append("Sending to ${peer.name}")
-                    append(if (peer.hops <= 1) " (direct)" else " (${peer.hops} hops away)")
+                text = if (present) {
+                    "Sending to ${peer.name}" +
+                        if (peer.hops <= 1) " (direct)" else " (${peer.hops} hops away)"
+                } else {
+                    "${peer.name} is out of range — messages will not be delivered"
                 },
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
-                color = AccentSaffronDeep,
+                color = if (present) AccentSaffronDeep else TextSecondary,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = onClear, modifier = Modifier.size(20.dp)) {
-                Icon(Icons.Default.Close, contentDescription = "Send to everyone instead", tint = TextMuted, modifier = Modifier.size(16.dp))
-            }
         }
     }
 }
@@ -1337,6 +1197,7 @@ private fun BatteryOptimizationNotice() {
 private fun MessageBubble(
     message: ITantraMessage,
     isMine: Boolean,
+    translation: TranslationManager.Outcome?,
     onReadAloud: () -> Unit
 ) {
     val isAlert = message.isAlert || message.type == MessageType.ALERT
@@ -1444,12 +1305,47 @@ private fun MessageBubble(
                     )
                 }
 
-                // Message Text Content
+                // Message Text Content. When a translation exists the reader sees it
+                // first, with the original kept underneath — and when one was needed but
+                // could not be produced, that is stated outright. Silently showing
+                // untranslated text as though it were translated is the failure that
+                // actually matters in a distress message.
+                val shown = when (translation) {
+                    is TranslationManager.Outcome.Translated -> translation.text
+                    else -> message.text
+                }
                 Text(
-                    text = message.text,
+                    text = shown,
                     style = MaterialTheme.typography.bodyLarge,
                     color = TextPrimary
                 )
+
+                when (translation) {
+                    is TranslationManager.Outcome.Translated -> {
+                        Text(
+                            text = "translated from ${message.srcLang.uppercase()} · " +
+                                translation.original,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextMuted,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+
+                    is TranslationManager.Outcome.Failed -> {
+                        Text(
+                            text = "shown untranslated — no " +
+                                "${message.srcLang.uppercase()} translation available",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = AccentAlert,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+
+                    // NotNeeded and "not translated yet" both render as plain text.
+                    else -> Unit
+                }
             }
         }
     }

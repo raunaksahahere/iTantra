@@ -18,6 +18,8 @@ import com.itantra.mesh.ITantraMeshManager
 import com.itantra.mesh.transport.BleReadiness
 import com.itantra.mesh.service.MeshForegroundService
 import com.itantra.ui.languages.LanguagePacksScreen
+import com.itantra.schema.Peer
+import com.itantra.ui.home.HomeScreen
 import com.itantra.ui.onboarding.OnboardingScreen
 import com.itantra.ui.theme.SurfaceBg
 import com.itantra.ui.theme.ITantraTheme
@@ -25,7 +27,12 @@ import com.itantra.ui.transceiver.TransceiverScreen
 
 enum class AppScreen {
     ONBOARDING,
-    TRANSCEIVER,
+
+    /** Peer-first landing screen: search, the people in range, and distress. */
+    HOME,
+
+    /** One conversation with one peer. Only reachable by picking someone on HOME. */
+    PEER_CHAT,
     LANGUAGES
 }
 
@@ -64,9 +71,13 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = SurfaceBg
                 ) {
+                    // Which peer PEER_CHAT is about. Held here rather than in the
+                    // screen so returning from Language Packs lands back in the same
+                    // conversation instead of dropping to the peer list.
+                    var activePeer by remember { mutableStateOf<Peer?>(null) }
                     var currentScreen by remember {
                         mutableStateOf(
-                            if (identityManager.hasIdentity()) AppScreen.TRANSCEIVER else AppScreen.ONBOARDING
+                            if (identityManager.hasIdentity()) AppScreen.HOME else AppScreen.ONBOARDING
                         )
                     }
 
@@ -77,25 +88,50 @@ class MainActivity : ComponentActivity() {
                                 onComplete = {
                                     MeshForegroundService.start(this)
                                     meshManager.startMesh()
-                                    currentScreen = AppScreen.TRANSCEIVER
+                                    currentScreen = AppScreen.HOME
                                 }
                             )
                         }
 
-                        AppScreen.TRANSCEIVER -> {
-                            TransceiverScreen(
+                        AppScreen.HOME -> {
+                            HomeScreen(
                                 meshManager = meshManager,
-                                identityManager = identityManager,
+                                onOpenPeer = { peer ->
+                                    activePeer = peer
+                                    currentScreen = AppScreen.PEER_CHAT
+                                },
                                 onOpenLanguages = {
                                     currentScreen = AppScreen.LANGUAGES
                                 }
                             )
                         }
 
+                        AppScreen.PEER_CHAT -> {
+                            // A conversation cannot exist without a peer; if one is
+                            // somehow missing, fall back rather than showing an
+                            // addressee-less screen that would broadcast.
+                            val peer = activePeer
+                            if (peer == null) {
+                                currentScreen = AppScreen.HOME
+                            } else {
+                                TransceiverScreen(
+                                    meshManager = meshManager,
+                                    identityManager = identityManager,
+                                    peer = peer,
+                                    onBack = { currentScreen = AppScreen.HOME },
+                                    onOpenLanguages = {
+                                        currentScreen = AppScreen.LANGUAGES
+                                    }
+                                )
+                            }
+                        }
+
                         AppScreen.LANGUAGES -> {
                             LanguagePacksScreen(
                                 onBack = {
-                                    currentScreen = AppScreen.TRANSCEIVER
+                                    currentScreen =
+                                        if (activePeer != null) AppScreen.PEER_CHAT
+                                        else AppScreen.HOME
                                 }
                             )
                         }

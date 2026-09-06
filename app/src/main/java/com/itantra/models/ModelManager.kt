@@ -75,12 +75,17 @@ class ModelManager(private val context: Context) {
         if (unpublished.isNotEmpty()) {
             // Refusing here is deliberate: installing a file we cannot checksum would
             // silently break the offline-integrity guarantee.
-            fail(
-                lang,
-                "No verified download published for: ${unpublished.joinToString { it.fileName }}. " +
-                    "Export the model, then set url + sha256 in assets/models/manifest.json, " +
-                    "or sideload into ${store.sideloadRoot?.absolutePath}/$lang/"
+            // File names, manifest keys and sideload paths are developer detail and go to
+            // logcat. What reaches the screen stays plain: this is the ordinary state of
+            // every language except Hindi and English, not an error the user can act on.
+            Log.w(
+                TAG,
+                "UNPUBLISHED $lang: no verified download for " +
+                    unpublished.joinToString { it.fileName } +
+                    " — set url + sha256 in assets/models/manifest.json, or sideload into " +
+                    "${store.sideloadRoot?.absolutePath}/$lang/"
             )
+            fail(lang, "Not available yet")
             return@withContext false
         }
 

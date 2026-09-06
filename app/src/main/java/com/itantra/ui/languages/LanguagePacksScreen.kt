@@ -86,7 +86,6 @@ fun LanguagePacksScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item { OfflineBanner() }
 
             items(packs, key = { it.lang }) { pack ->
                 val status = remember(pack.lang, refreshToken) { modelManager.status(pack.lang) }
@@ -107,44 +106,6 @@ fun LanguagePacksScreen(
                     onToggleEnabled = { checked ->
                         if (checked) voicePrefs.enable(pack.lang) else voicePrefs.disable(pack.lang)
                     }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun OfflineBanner() {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = SurfaceVariantBg,
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle)
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Icon(
-                Icons.Default.CloudOff,
-                contentDescription = null,
-                tint = AccentEmerald,
-                modifier = Modifier.size(24.dp)
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "One-time download, then fully offline",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
-                Text(
-                    text = "Downloading a pack is the only time iTantra uses the network. " +
-                        "Every file is SHA-256 verified before install. Once a language is " +
-                        "present, speech recognition and synthesis run entirely on-device.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
-                    fontSize = 12.sp
                 )
             }
         }
@@ -234,9 +195,7 @@ private fun LanguagePackItem(
 
             if (status == ModelManager.PackStatus.UNPUBLISHED) {
                 Text(
-                    text = "No verified download published yet. Export this language to ONNX, " +
-                        "then set url + sha256 in assets/models/manifest.json — or sideload the " +
-                        "files during development.",
+                    text = "Not available yet",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextMuted,
                     fontSize = 10.sp
