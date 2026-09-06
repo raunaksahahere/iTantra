@@ -155,3 +155,72 @@ HiFi-GAN stays on the legacy tracer, which handles it without complaint.
 The two stages are exported separately rather than fused, matching the app's two-stage
 `TtsEngine`: the vocoder is the expensive half and the most likely thing to be swapped or
 requantised later.
+
+## 7. Translation (IndicTrans2)
+
+Hindi ↔ English only — the two languages with real STT and TTS today.
+
+**No export was needed.** MIT-licensed ONNX conversions of AI4Bharat's distilled 200M
+IndicTrans2 are published by `TigreGotico`, and the graph contract was read off the models
+themselves rather than taken from the README:
+
+```
+encoder  input_ids [B,S] i64, attention_mask [B,S] i64  ->  last_hidden_state [B,S,512]
+decoder  input_ids [B,T] i64, encoder_attention_mask [B,S] i64,
+         encoder_hidden_states [B,S,512]                ->  logits [B,T,V] (+72 KV tensors)
+```
+
+`decoder_start_token_id=2`, `eos=2`, `pad=1`, max source 256 tokens.
+
+### Which direction goes on which phone
+
+Translation happens **on receive**, into the reader's own language, so a phone needs only
+one direction — the one *into* the language it is set to. Files therefore live in the
+**target** language's pack directory:
+
+| Phone set to | Needs | Lives in | Size |
+|---|---|---|---|
+| English | Hindi → English | `models/en/` | 226 MB |
+| Hindi | English → Hindi | `models/hi/` | 270 MB |
+
+### Rebuild the vocab files
+
+The ONNX repos ship a SentencePiece model plus a separate graph dictionary whose ids do
+**not** match SentencePiece's internal ids. `export_mt_vocab.py` joins them into one flat
+TSV the Kotlin tokeniser reads without a native SentencePiece dependency, and writes the
+FLORES language-tag ids — which differ between directions (`hin_Deva` is 8 one way and 15
+the other) and must never be hardcoded.
+
+```
+./ttsenv/bin/python export_mt_vocab.py --dir mt/indic-en
+./ttsenv/bin/python export_mt_vocab.py --dir mt/en-indic
+```
+
+### Check a direction actually translates
+
+```
+./ttsenv/bin/python translate_onnx.py --dir mt/indic-en --src hi --tgt en \
+  --text "यहाँ भूकंप आया है, तीन लोग घायल हैं"
+```
+
+This drives the same greedy loop the app does. Read the output — the point is the
+translation, not the exit code.
+
+### Put them on a phone
+
+```
+adb push mt/staged/en/. /sdcard/Android/data/com.itantra/files/models/en/
+adb push mt/staged/hi/. /sdcard/Android/data/com.itantra/files/models/hi/
+adb logcat -s TranslationManager IndicTrans2
+```
+
+### Known limits
+
+- **Greedy decoding, no KV cache.** `decoder_model.onnx` re-runs the whole prefix each
+  step, so decoding is O(n²) in output length. Switching to `decoder_with_past_model.onnx`
+  is the first optimisation if latency hurts; it is a speed fix, not a correctness one.
+- **No IndicNLP normalisation.** The reference pipeline runs an Indic normaliser and entity
+  placeholders before SentencePiece; this does NFKC only. Fine for the phrasings tested,
+  unverified for unusual orthography.
+- **Hindi and English only.** The other eight languages have no MT model here, and
+  `TranslationManager` reports that honestly rather than passing text through pretending.

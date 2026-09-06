@@ -10,3 +10,7 @@ out/
 
 # Extracted from the checkpoint archives; regenerate per README
 configs/
+
+# Downloaded and staged translation models — same rule as out/: release artifacts,
+# fetched by README.md §7 rather than committed. ~520 MB.
+mt/
