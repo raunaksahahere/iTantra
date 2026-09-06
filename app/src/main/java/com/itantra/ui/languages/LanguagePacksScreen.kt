@@ -93,11 +93,21 @@ fun LanguagePacksScreen(
                     (it is ModelManager.Progress.Downloading && it.lang == pack.lang) ||
                         (it is ModelManager.Progress.Verifying && it.lang == pack.lang)
                 }
+                val hasTranslation = remember(pack.lang, refreshToken) {
+                    modelManager.hasTranslation(pack.lang)
+                }
                 LanguagePackItem(
                     pack = pack,
                     status = status,
                     enabled = pack.lang in enabledLanguages,
                     progress = progress.takeIf { busy },
+                    hasTranslation = hasTranslation,
+                    onInstallTranslation = {
+                        scope.launch {
+                            modelManager.installTranslation(pack.lang)
+                            refreshToken++
+                        }
+                    },
                     onInstall = { scope.launch { modelManager.install(pack.lang) } },
                     onUninstall = {
                         modelManager.uninstall(pack.lang)
@@ -118,6 +128,8 @@ private fun LanguagePackItem(
     status: ModelManager.PackStatus,
     enabled: Boolean,
     progress: ModelManager.Progress?,
+    hasTranslation: Boolean,
+    onInstallTranslation: () -> Unit,
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit
@@ -200,6 +212,42 @@ private fun LanguagePackItem(
                     color = TextMuted,
                     fontSize = 10.sp
                 )
+            }
+
+            // Translation is a separate, optional download: it is about as large again as
+            // the voice pack, and a language listens and speaks perfectly well without it.
+            // Only offered once the voice pack is actually installed — translating into a
+            // language this phone cannot speak would produce no audio.
+            if (pack.translation.isNotEmpty() &&
+                status == ModelManager.PackStatus.INSTALLED
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = if (hasTranslation) {
+                            "Translation ready — understands other languages"
+                        } else {
+                            "Translation " +
+                                "(+${pack.translationBytes / 1_000_000} MB, optional)"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (hasTranslation) AccentEmerald else TextSecondary,
+                        fontSize = 10.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (!hasTranslation) {
+                        TextButton(onClick = onInstallTranslation) {
+                            Text(
+                                "Download",
+                                fontSize = 11.sp,
+                                color = AccentSaffron,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
 
             Row(

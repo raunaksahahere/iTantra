@@ -193,6 +193,56 @@ class ModelManager(private val context: Context) {
         return ok
     }
 
+    /**
+     * Installs the optional translation files for [lang] — the models that let this phone
+     * translate incoming foreign text *into* [lang].
+     *
+     * Separate from [install] because it is roughly as large again as the voice pack and
+     * the voice loop never depends on it: a failure here must not make a language that
+     * speaks and listens correctly report itself as broken.
+     */
+    suspend fun installTranslation(lang: String): Boolean = withContext(Dispatchers.IO) {
+        val spec = ModelCatalog.byLang(context, lang)
+        if (spec == null) {
+            fail(lang, "Unknown language '$lang'")
+            return@withContext false
+        }
+
+        val missing = store.missingTranslation(spec)
+        if (missing.isEmpty()) {
+            Log.i(TAG, "Translation for '$lang' already complete")
+            _progress.value = Progress.Done(lang)
+            return@withContext true
+        }
+
+        val unpublished = missing.filterNot { it.isPublished }
+        if (unpublished.isNotEmpty()) {
+            Log.w(
+                TAG,
+                "UNPUBLISHED translation $lang: ${unpublished.joinToString { it.fileName }}"
+            )
+            fail(lang, "Not available yet")
+            return@withContext false
+        }
+
+        val dir = store.installDir(lang).apply { mkdirs() }
+        for (model in missing) {
+            currentCoroutineContext().ensureActive()
+            if (!downloadAndVerify(lang, model, dir)) return@withContext false
+        }
+
+        val complete = store.missingTranslation(spec).isEmpty()
+        _progress.value = if (complete) Progress.Done(lang) else Progress.Idle
+        Log.i(TAG, "Translation install for '$lang' complete=$complete")
+        return@withContext complete
+    }
+
+    /** True when [lang] can translate foreign text into itself. */
+    fun hasTranslation(lang: String): Boolean {
+        val spec = ModelCatalog.byLang(context, lang) ?: return false
+        return store.hasTranslation(spec)
+    }
+
     fun status(lang: String): PackStatus {
         val spec = ModelCatalog.byLang(context, lang) ?: return PackStatus.UNKNOWN
         val missing = store.missing(spec)

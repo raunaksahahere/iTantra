@@ -21,7 +21,22 @@ enum class ModelRole {
     TTS_VOCODER,
 
     /** Symbol table backing TTS text normalisation. */
-    TTS_TOKENS
+    TTS_TOKENS,
+
+    /** IndicTrans2 encoder (ONNX). */
+    MT_ENCODER,
+
+    /** IndicTrans2 decoder (ONNX). */
+    MT_DECODER,
+
+    /** BPE vocabulary for the translation source side. */
+    MT_BPE_SRC,
+
+    /** BPE vocabulary for the translation target side. */
+    MT_BPE_TGT,
+
+    /** Language-tag ids and vocabulary sizes for one translation direction. */
+    MT_META
 }
 
 /**
@@ -50,7 +65,15 @@ data class LanguageModelSpec(
     val displayName: String,
     val nativeName: String,
     val bundled: Boolean,
-    val models: List<ModelSpec>
+    val models: List<ModelSpec>,
+    /**
+     * Files for translating *into* this language, kept out of [models] on purpose.
+     *
+     * Translation is optional and roughly as large again as the voice pack, so counting
+     * it towards pack completeness would report Hindi as "not ready" for want of a
+     * feature the voice loop deliberately does not depend on.
+     */
+    val translation: List<ModelSpec> = emptyList()
 ) {
     fun of(role: ModelRole): ModelSpec? = models.firstOrNull { it.role == role }
 
@@ -60,4 +83,7 @@ data class LanguageModelSpec(
     }
 
     val totalBytes: Long get() = models.sumOf { it.sizeBytes }
+
+    /** Size of the optional translation download, separate from [totalBytes]. */
+    val translationBytes: Long get() = translation.sumOf { it.sizeBytes }
 }

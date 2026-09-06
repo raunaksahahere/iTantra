@@ -49,26 +49,68 @@
         {
           "role": "TTS_ACOUSTIC",
           "fileName": "fastpitch-hi.int8.onnx",
-          "url": "",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/hi/fastpitch-hi.int8.onnx",
           "mirrorUrl": "",
-          "sha256": "",
-          "sizeBytes": 0
+          "sha256": "878c2359fa9ed88dbf3d7895f380ee9ca025247c722032220970b004b0e0a476",
+          "sizeBytes": 63185953
         },
         {
           "role": "TTS_VOCODER",
           "fileName": "hifigan-hi.int8.onnx",
-          "url": "",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/hi/hifigan-hi.int8.onnx",
           "mirrorUrl": "",
-          "sha256": "",
-          "sizeBytes": 0
+          "sha256": "2f07c88e30de4594eae9da54cf349262d0185e50172646ca20fd73f7d68383e4",
+          "sizeBytes": 22132798
         },
         {
           "role": "TTS_TOKENS",
           "fileName": "fastpitch-hi.tokens.json",
-          "url": "",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/hi/fastpitch-hi.tokens.json",
           "mirrorUrl": "",
-          "sha256": "",
-          "sizeBytes": 0
+          "sha256": "315cd28bbbad1aa7119f59d778f28b35666cbbfc85c2f748e2146bbf8edafb35",
+          "sizeBytes": 667
+        }
+      ],
+      "translation": [
+        {
+          "role": "MT_ENCODER",
+          "fileName": "mt-en-hi-encoder.int8.onnx",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-encoder.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "e3af222c3235519a6a87e67e19482f927badd643b1fedc76dd0f39d6209ab8b1",
+          "sizeBytes": 74761536
+        },
+        {
+          "role": "MT_DECODER",
+          "fileName": "mt-en-hi-decoder.int8.onnx",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-decoder.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "4eccdf167bf8da2d70a031f89c75472a72ba20e849afe89b87e195f9ac5025a3",
+          "sizeBytes": 203668211
+        },
+        {
+          "role": "MT_BPE_SRC",
+          "fileName": "mt-en-hi-bpe-src.tsv",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-bpe-src.tsv",
+          "mirrorUrl": "",
+          "sha256": "6835801f9bc559e0328208f2bed03dfc6131ea43a665f38e0d157850b47ff048",
+          "sizeBytes": 654754
+        },
+        {
+          "role": "MT_BPE_TGT",
+          "fileName": "mt-en-hi-bpe-tgt.tsv",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-bpe-tgt.tsv",
+          "mirrorUrl": "",
+          "sha256": "aa6dcca9807f91ef1045701bdd9b1ed4e39ef287a73c915b4fcd4a11692e253d",
+          "sizeBytes": 3661598
+        },
+        {
+          "role": "MT_META",
+          "fileName": "mt-en-hi-meta.json",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-meta.json",
+          "mirrorUrl": "",
+          "sha256": "0f525caee0153934369dfd700b359f1d88600812b3506fcdb4f01725ab0bda6e",
+          "sizeBytes": 217
         }
       ]
     },
@@ -97,26 +139,68 @@
         {
           "role": "TTS_ACOUSTIC",
           "fileName": "fastpitch-en.int8.onnx",
-          "url": "",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/en/fastpitch-en.int8.onnx",
           "mirrorUrl": "",
-          "sha256": "",
-          "sizeBytes": 0
+          "sha256": "8ae4c26e5d03ef1b72fba184f9460d2eca1e81362dd4df90839b449ca9faa805",
+          "sizeBytes": 63181344
         },
         {
           "role": "TTS_VOCODER",
           "fileName": "hifigan-en.int8.onnx",
-          "url": "",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/en/hifigan-en.int8.onnx",
           "mirrorUrl": "",
-          "sha256": "",
-          "sizeBytes": 0
+          "sha256": "2de17f389fee6b0bcb18b445ee317833530aa86c6720e6ff49eb5b694aa27ff3",
+          "sizeBytes": 22132798
         },
         {
           "role": "TTS_TOKENS",
           "fileName": "fastpitch-en.tokens.json",
-          "url": "",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/en/fastpitch-en.tokens.json",
           "mirrorUrl": "",
-          "sha256": "",
-          "sizeBytes": 0
+          "sha256": "721ef293934a5f7554f366c57aa48742065cf98349becb0ea66e31b5525e0989",
+          "sizeBytes": 481
+        }
+      ],
+      "translation": [
+        {
+          "role": "MT_ENCODER",
+          "fileName": "mt-hi-en-encoder.int8.onnx",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-encoder.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "4af34ee8e31beb787e08badcb3e9aa3808bbd6d8d4c590d81cb0b73c8f640101",
+          "sizeBytes": 121038144
+        },
+        {
+          "role": "MT_DECODER",
+          "fileName": "mt-hi-en-decoder.int8.onnx",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-decoder.int8.onnx",
+          "mirrorUrl": "",
+          "sha256": "70d1421b541394148b4ba458bcedf8e53639bb64c183a9bb1de81ba879c0f15e",
+          "sizeBytes": 111123188
+        },
+        {
+          "role": "MT_BPE_SRC",
+          "fileName": "mt-hi-en-bpe-src.tsv",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-bpe-src.tsv",
+          "mirrorUrl": "",
+          "sha256": "d32b97f1b2176c717d7989fada51aa91cf21b4311343fa8a08c8f42a606453f1",
+          "sizeBytes": 3661683
+        },
+        {
+          "role": "MT_BPE_TGT",
+          "fileName": "mt-hi-en-bpe-tgt.tsv",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-bpe-tgt.tsv",
+          "mirrorUrl": "",
+          "sha256": "f8b97576585956a3e881fcc9343fa5d88588e2432b1bf6f866b46e43e2750d88",
+          "sizeBytes": 654711
+        },
+        {
+          "role": "MT_META",
+          "fileName": "mt-hi-en-meta.json",
+          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-meta.json",
+          "mirrorUrl": "",
+          "sha256": "d484169414ac1e6a743fa6e81ca6ed2e114f0ae1ae8f6b4034f9773b120a8faf",
+          "sizeBytes": 216
         }
       ]
     },

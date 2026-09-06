@@ -69,4 +69,17 @@ class ModelStore(private val context: Context) {
     /** Lists the missing files for a language, for surfacing in the UI. */
     fun missing(spec: LanguageModelSpec): List<ModelSpec> =
         spec.models.filterNot { isPresent(spec.lang, it) }
+
+    /**
+     * True when this language can translate incoming foreign text into itself.
+     *
+     * Deliberately not part of [missing]: translation is optional, and a language with a
+     * working voice loop is "ready" whether or not it can also translate.
+     */
+    fun hasTranslation(spec: LanguageModelSpec): Boolean =
+        spec.translation.isNotEmpty() && spec.translation.all { isPresent(spec.lang, it) }
+
+    /** Missing translation files, for surfacing separately from the voice pack. */
+    fun missingTranslation(spec: LanguageModelSpec): List<ModelSpec> =
+        spec.translation.filterNot { isPresent(spec.lang, it) }
 }

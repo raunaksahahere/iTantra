@@ -36,33 +36,40 @@ object ModelCatalog {
     fun byLang(context: Context, lang: String): LanguageModelSpec? =
         languages(context).firstOrNull { it.lang == lang }
 
+    /** Shared by the required [models] array and the optional [translation] one. */
+    private fun parseSpecs(arr: org.json.JSONArray?): List<ModelSpec> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).mapNotNull { j ->
+            val m = arr.getJSONObject(j)
+            val role = runCatching { ModelRole.valueOf(m.getString("role")) }.getOrNull()
+            if (role == null) {
+                Log.w(TAG, "Skipping model with unknown role: ${m.optString("role")}")
+                return@mapNotNull null
+            }
+            ModelSpec(
+                role = role,
+                fileName = m.getString("fileName"),
+                url = m.optString("url", ""),
+                mirrorUrl = m.optString("mirrorUrl", ""),
+                sha256 = m.optString("sha256", "").lowercase(),
+                sizeBytes = m.optLong("sizeBytes", 0L)
+            )
+        }
+    }
+
     private fun parse(json: String): List<LanguageModelSpec> {
         val arr = JSONObject(json).getJSONArray("languages")
         return (0 until arr.length()).mapNotNull { i ->
             val o = arr.getJSONObject(i)
-            val models = o.getJSONArray("models")
-            val specs = (0 until models.length()).mapNotNull { j ->
-                val m = models.getJSONObject(j)
-                val role = runCatching { ModelRole.valueOf(m.getString("role")) }.getOrNull()
-                if (role == null) {
-                    Log.w(TAG, "Skipping model with unknown role: ${m.optString("role")}")
-                    return@mapNotNull null
-                }
-                ModelSpec(
-                    role = role,
-                    fileName = m.getString("fileName"),
-                    url = m.optString("url", ""),
-                    mirrorUrl = m.optString("mirrorUrl", ""),
-                    sha256 = m.optString("sha256", "").lowercase(),
-                    sizeBytes = m.optLong("sizeBytes", 0L)
-                )
-            }
+            val specs = parseSpecs(o.getJSONArray("models"))
+            val translation = parseSpecs(o.optJSONArray("translation"))
             LanguageModelSpec(
                 lang = o.getString("lang"),
                 displayName = o.getString("displayName"),
                 nativeName = o.getString("nativeName"),
                 bundled = o.optBoolean("bundled", false),
-                models = specs
+                models = specs,
+                translation = translation
             )
         }
     }
