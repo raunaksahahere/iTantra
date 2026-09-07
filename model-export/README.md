@@ -8,7 +8,18 @@ STT needs no export — verified int8 ONNX already exists (see §3). Only TTS is
 
 ## 1. What is already done
 
-Hindi and English TTS are exported and verified. The files are in `out/<lang>/`:
+TTS is exported, verified and published for **nine languages** — Hindi, English, Bengali,
+Gujarati, Kannada, Malayalam, Marathi, Tamil and Telugu. Odia is deliberately absent: it
+has no published speech-to-text export, so a voice pack could speak but never listen.
+
+Re-run the whole batch with `export_batch.py`, which drives the scripts below one language
+at a time and prints a running counter:
+
+```
+./ttsenv/bin/python export_batch.py --langs gu mr kn ml ta te bn
+```
+
+The files land in `out/<lang>/`:
 
 | File | Size |
 |---|---|

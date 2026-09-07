@@ -60,6 +60,58 @@ def write_wav(path: Path, audio: np.ndarray, sample_rate: int) -> None:
         f.write(data)
 
 
+def spectral_report(audio: np.ndarray, sample_rate: int) -> dict:
+    """
+    Three cheap measurements that separate speech from a plausible-looking failure.
+
+    A vocoder handed a mis-shaped or garbage mel still emits audio with a healthy RMS and
+    a sensible duration, so level checks alone pass it. What it emits is almost always
+    steady hiss or a constant buzz, and those differ from speech in ways that survive not
+    knowing the language:
+
+    * **envelope dynamic range** - speech alternates loud syllables with near-silent
+      closures, so its frame energies span a wide range. Steady noise does not.
+    * **active frame fraction** - real utterances contain pauses. Something active in
+      every single frame is a drone; something active in almost none is silence.
+    * **spectral tilt** - voiced speech loses energy with rising frequency. White-ish
+      noise is flat or rising, so a non-negative tilt is a strong noise signal.
+
+    None of these can judge whether the *pronunciation* is right - only a listener can do
+    that, which is why a WAV is always written alongside.
+    """
+    frame = max(256, int(0.025 * sample_rate))
+    hop = max(128, int(0.010 * sample_rate))
+    if audio.size < frame * 4:
+        return {"dyn_range_db": 0.0, "active_frac": 0.0, "tilt_db": 0.0}
+
+    n_frames = 1 + (audio.size - frame) // hop
+    idx = np.arange(frame)[None, :] + hop * np.arange(n_frames)[:, None]
+    frames = audio[idx]
+
+    energy = np.sqrt(np.mean(frames ** 2, axis=1)) + 1e-12
+    db = 20.0 * np.log10(energy)
+
+    # Percentiles rather than min/max: one clipped sample or one dead frame should not
+    # define the range.
+    dyn_range_db = float(np.percentile(db, 95) - np.percentile(db, 5))
+
+    # "Active" relative to this utterance's own peak, so the threshold does not depend on
+    # absolute gain, which varies per language pack.
+    active_frac = float(np.mean(db > (db.max() - 35.0)))
+
+    window = np.hanning(frame)
+    spectrum = np.abs(np.fft.rfft(frames * window, axis=1)) ** 2
+    power = spectrum.mean(axis=0) + 1e-12
+    freqs = np.fft.rfftfreq(frame, 1.0 / sample_rate)
+
+    # Energy below 1 kHz against energy above 4 kHz — the coarse slope of the spectrum.
+    low = power[(freqs >= 100) & (freqs < 1000)].mean()
+    high = power[freqs >= 4000].mean() if (freqs >= 4000).any() else power[-1]
+    tilt_db = float(10.0 * np.log10(high / low))
+
+    return {"dyn_range_db": dyn_range_db, "active_frac": active_frac, "tilt_db": tilt_db}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", type=Path, required=True, help="directory of exported files")
@@ -105,6 +157,11 @@ def main() -> int:
     write_wav(out, audio.astype(np.float32), args.sample_rate)
     print(f"wrote   : {out}")
 
+    spec = spectral_report(audio.astype(np.float64), args.sample_rate)
+    print(f"envelope: dynamic range {spec['dyn_range_db']:.1f} dB   "
+          f"active frames {spec['active_frac']*100:.0f}%   "
+          f"spectral tilt {spec['tilt_db']:+.1f} dB")
+
     # A working vocoder gives audible level and a plausible duration for the token count.
     problems = []
     if peak < 0.01:
@@ -115,6 +172,21 @@ def main() -> int:
         problems.append(f"implausibly short ({seconds:.2f}s for {len(ids)} tokens)")
     if not np.all(np.isfinite(audio)):
         problems.append("non-finite samples")
+
+    # Spectral checks catch the failures that level alone does not. A vocoder fed a
+    # mis-shaped or garbage mel still produces *something* with a healthy RMS — usually
+    # broadband hiss or a constant buzz — and those are exactly what these three separate
+    # from speech.
+    if spec["dyn_range_db"] < 15.0:
+        # Speech alternates loud syllables with near-silent closures; steady noise does not.
+        problems.append(f"flat envelope ({spec['dyn_range_db']:.1f} dB range) — buzz, not speech")
+    if spec["active_frac"] > 0.98:
+        problems.append(f"no silence anywhere ({spec['active_frac']*100:.0f}% active) — likely hiss")
+    if spec["active_frac"] < 0.15:
+        problems.append(f"almost entirely silent ({spec['active_frac']*100:.0f}% active)")
+    if spec["tilt_db"] > -3.0:
+        # Voiced speech falls off with frequency; white-ish noise is flat or rising.
+        problems.append(f"no spectral rolloff ({spec['tilt_db']:+.1f} dB) — noise-like")
 
     if problems:
         print("SUSPECT: " + "; ".join(problems))

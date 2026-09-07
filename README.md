@@ -40,7 +40,7 @@ iTantra turns ordinary Android phones into walkie-talkies that work with no infr
 ## Features
 
 - **Speech → text → speech transceiver.** Hold to talk on one phone, hear it on another. Only text crosses the link, so a spoken sentence costs a few hundred bytes instead of tens of kilobytes.
-- **Ten languages.** Hindi and English are ready to install today; the rest are one-time language packs. Models are downloaded once rather than bundled — a single language is a few hundred megabytes, which is not something to put in an APK.
+- **Ten languages, nine of them complete.** Every language except Odia can both listen and speak, installable as a one-time language pack from inside the app. Models are downloaded once rather than bundled — a single language is a few hundred megabytes, which is not something to put in an APK.
 - **Everything runs on the device.** Speech recognition, speech synthesis and voice detection all execute locally with ONNX Runtime. Nothing is sent anywhere for processing, and the whole loop works in airplane mode.
 - **Bluetooth LE mesh transport.** Built on the [bitchat](https://github.com/permissionlesstech/bitchat-android) stack — automatic peer discovery, multi-hop relay, no pairing, no accounts. Phones out of direct range are reached through the phones in between.
 - **Signed by default, encrypted on request.** Every message is Ed25519-signed, so a relay can't forge or tamper with one — but a public broadcast is readable by the phones that carry it, which is the price of reaching furthest. Flip the lock and messages go out Noise-encrypted end to end to each peer instead. It's the sender's explicit choice per conversation, and the interface says which mode you're in rather than leaving you to assume.
@@ -61,16 +61,18 @@ Languages are multi-select — enable as many as you need and switch between the
 |---|---|---|---|---|---|
 | Hindi | हिन्दी | `hi` | Ready | Ready | Ready (↔ English) |
 | English | English (Indian) | `en` | Ready | Ready | Ready (↔ Hindi) |
-| Bengali | বাংলা | `bn` | Ready | Exportable | — |
-| Gujarati | ગુજરાતી | `gu` | Ready | Exportable | — |
-| Kannada | ಕನ್ನಡ | `kn` | Ready | Exportable | — |
-| Malayalam | മലയാളം | `ml` | Ready | Exportable | — |
-| Marathi | मराठी | `mr` | Ready | Exportable | — |
-| Tamil | தமிழ் | `ta` | Ready | Exportable | — |
-| Telugu | తెలుగు | `te` | Ready | Exportable | — |
+| Bengali | বাংলা | `bn` | Ready | Ready | — |
+| Gujarati | ગુજરાતી | `gu` | Ready | Ready | — |
+| Kannada | ಕನ್ನಡ | `kn` | Ready | Ready | — |
+| Malayalam | മലയാളം | `ml` | Ready | Ready | — |
+| Marathi | मराठी | `mr` | Ready | Ready | — |
+| Tamil | தமிழ் | `ta` | Ready | Ready | — |
+| Telugu | తెలుగు | `te` | Ready | Ready | — |
 | Odia | ଓଡ଼ିଆ | `or` | **None published** | Exportable | — |
 
-*Ready* means a verified quantized model exists and the app can install it. *Exportable* means the upstream checkpoint is published and `model-export/` turns it into a mobile model in about a minute per language. Odia is the one gap: AI4Bharat has not published a recognition model for it in a form anyone has exported yet.
+*Ready* means a verified quantized model exists, is published, and the app can install it from inside Language Packs. Nine of the ten languages are complete for both directions of the voice loop.
+
+Odia is the one gap, and it is deliberate: AI4Bharat has not published a recognition model for it in a form anyone has exported, so a voice pack would be able to speak but never listen. Shipping half a loop would be worse than saying it is missing.
 
 Translation is currently Hindi ↔ English only, because those are the two languages with working recognition *and* synthesis — translating into a language the phone cannot speak would not produce audio. A phone only carries the direction *into* its own language, so an English handset holds Hindi→English and nothing else.
 
@@ -146,6 +148,7 @@ and the pinned dependency versions the export needs.
 
 Actively in development. Every piece of the voice loop now exists as a runnable model, and the app is wired end to end — but **it has not yet been run on real phones**, which is the honest bar for a project like this.
 
+- ✅ **Voice packs published for nine languages** — recognition and synthesis for Hindi, English, Bengali, Gujarati, Kannada, Malayalam, Marathi, Tamil and Telugu, downloadable in-app and SHA-256 verified. Each synthesis model passed spectral checks (envelope dynamic range, active-frame fraction, spectral tilt) and ships a sample WAV.
 - ✅ **Built and verified on the desktop** — BLE mesh transport, identity and peer discovery, peer-first navigation, typed text, read-aloud, alert mode, push-to-talk capture, multi-select languages, distress announcements, multi-hop peer visibility, targeted messaging, and the Model Manager with SHA-256 verification. Recognition, synthesis and translation models exist for Hindi and English and produce correct output when driven directly — Hindi↔English translation was checked sentence by sentence, and the tokenizer reimplementation was diffed piece-for-piece against the reference SentencePiece library before it was trusted.
 - ⏳ **Not yet proven on hardware** — two-phone discovery, mesh delivery, distress propagation across relays, push-to-talk capture, and end-to-end spoken latency including translation. None of these can be honestly claimed from a desktop, and BLE in particular behaves differently on real radios and per-manufacturer power management.
 - 📋 **Planned** — translation beyond Hindi ↔ English, KV-cached decoding to speed translation up, bypass mode for raw audio, and recognition for Odia.
