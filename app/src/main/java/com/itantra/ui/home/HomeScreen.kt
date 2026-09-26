@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -94,6 +95,15 @@ fun HomeScreen(
                     color = AccentSaffron,
                     modifier = Modifier.weight(1f)
                 )
+                // The app spreads the way the mesh does: phone to phone, no store, no
+                // connection. The receiver taps the file and installs.
+                IconButton(onClick = {
+                    scope.launch {
+                        com.itantra.models.PackSharing(context).appIntent()?.let(context::startActivity)
+                    }
+                }) {
+                    Icon(Icons.Default.Share, contentDescription = "Share iTantra with another phone", tint = TextSecondary)
+                }
                 IconButton(onClick = onOpenLanguages) {
                     Icon(
                         Icons.Default.Language,

@@ -10,9 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
-import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 /**
@@ -29,7 +27,10 @@ class ModelManager(private val context: Context) {
 
     companion object {
         private const val TAG = "ModelManager"
-        private const val BUFFER = 64 * 1024
+        private const val FREE_SPACE_MARGIN = 200L * 1024 * 1024
+
+        /** Progress key for an import in flight. */
+        const val IMPORT = "import"
     }
 
     sealed interface Progress {
@@ -90,6 +91,7 @@ class ModelManager(private val context: Context) {
         }
 
         val dir = store.installDir(lang).apply { mkdirs() }
+        if (!hasRoomFor(lang, dir, missing)) return@withContext false
 
         for (model in missing) {
             currentCoroutineContext().ensureActive()
@@ -107,83 +109,54 @@ class ModelManager(private val context: Context) {
         complete
     }
 
-    private suspend fun downloadAndVerify(lang: String, model: ModelSpec, dir: File): Boolean {
-        val target = File(dir, model.fileName)
-        val tmp = File(dir, "${model.fileName}.part")
+    private val downloader by lazy { VerifiedDownloader(http) }
 
+    private suspend fun downloadAndVerify(lang: String, model: ModelSpec, dir: File): Boolean {
         val sources = listOfNotNull(
             model.url.takeIf { it.isNotBlank() },
             model.mirrorUrl.takeIf { it.isNotBlank() }
         )
+        _progress.value = Progress.Downloading(lang, model.fileName, 0f)
+        val result = downloader.download(
+            sources = sources,
+            target = File(dir, model.fileName),
+            sha256 = model.sha256,
+            expectedBytes = model.sizeBytes
+        ) { fraction -> _progress.value = Progress.Downloading(lang, model.fileName, fraction) }
 
-        for ((index, url) in sources.withIndex()) {
-            currentCoroutineContext().ensureActive()
-            try {
-                _progress.value = Progress.Downloading(lang, model.fileName, 0f)
-                val digest = fetch(url, tmp, model.sizeBytes) { fraction ->
-                    _progress.value = Progress.Downloading(lang, model.fileName, fraction)
-                }
-
-                _progress.value = Progress.Verifying(lang, model.fileName)
-                if (!digest.equals(model.sha256, ignoreCase = true)) {
-                    tmp.delete()
-                    Log.e(TAG, "CHECKSUM_MISMATCH ${model.fileName}: expected ${model.sha256}, got $digest")
-                    // A corrupt CDN copy is worth retrying against the mirror; a wrong
-                    // digest in the manifest is not, but we cannot tell them apart here.
-                    if (index < sources.lastIndex) continue
-                    fail(lang, "Checksum mismatch for ${model.fileName}")
-                    return false
-                }
-
-                if (!tmp.renameTo(target)) {
-                    tmp.copyTo(target, overwrite = true)
-                    tmp.delete()
-                }
-                Log.i(TAG, "Installed ${model.fileName} (${target.length()} bytes)")
-                return true
-            } catch (e: Exception) {
-                tmp.delete()
-                Log.e(TAG, "DOWNLOAD_FAILED ${model.fileName} from $url: ${e.javaClass.simpleName}: ${e.message}", e)
-                if (index < sources.lastIndex) continue
-                fail(lang, "Download failed for ${model.fileName}: ${e.message}")
-                return false
+        return when (result) {
+            is VerifiedDownloader.Result.Installed -> {
+                Log.i(TAG, "Installed ${model.fileName} (${result.file.length()} bytes)")
+                true
+            }
+            is VerifiedDownloader.Result.Failed -> {
+                fail(lang, result.reason)
+                false
             }
         }
-        fail(lang, "No source URL for ${model.fileName}")
-        return false
     }
 
-    /** Streams [url] into [dest], returning the lowercase SHA-256 of what was written. */
-    private suspend fun fetch(
-        url: String,
-        dest: File,
-        expectedBytes: Long,
-        onProgress: (Float) -> Unit
-    ): String {
-        val response = http.newCall(Request.Builder().url(url).build()).execute()
-        response.use {
-            if (!it.isSuccessful) throw IllegalStateException("HTTP ${it.code}")
-            val body = it.body ?: throw IllegalStateException("Empty body")
-            val total = body.contentLength().takeIf { len -> len > 0 } ?: expectedBytes
-
-            val md = MessageDigest.getInstance("SHA-256")
-            var written = 0L
-            body.byteStream().use { input ->
-                dest.outputStream().use { output ->
-                    val buf = ByteArray(BUFFER)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val n = input.read(buf)
-                        if (n <= 0) break
-                        output.write(buf, 0, n)
-                        md.update(buf, 0, n)
-                        written += n
-                        if (total > 0) onProgress((written.toFloat() / total).coerceIn(0f, 1f))
-                    }
-                }
-            }
-            return md.digest().joinToString("") { b -> "%02x".format(b) }
+    /**
+     * Refuses to start a download the phone has no room for. Filling the disk halfway
+     * through a 200 MB file helps nobody, and on a cheap phone it can take the mesh's own
+     * storage down with it. Partial files already on disk count towards what is needed.
+     */
+    private fun hasRoomFor(lang: String, dir: File, files: List<ModelSpec>): Boolean {
+        val needed = files.sumOf { spec ->
+            val part = File(dir, "${spec.fileName}.part")
+            (spec.sizeBytes - (if (part.isFile) part.length() else 0L)).coerceAtLeast(0L)
         }
+        val free = dir.usableSpace
+        // Keep a margin so the rest of the phone keeps working afterwards.
+        if (needed + FREE_SPACE_MARGIN > free) {
+            fail(
+                lang,
+                "Not enough storage: needs ${needed / 1_000_000} MB, " +
+                    "${free / 1_000_000} MB free"
+            )
+            return false
+        }
+        return true
     }
 
     /** Removes an installed pack to reclaim space. */
@@ -223,6 +196,7 @@ class ModelManager(private val context: Context) {
             }
 
             val dir = store.translationDir.apply { mkdirs() }
+            if (!hasRoomFor(familyId, dir, missing)) return@withContext false
             for (model in missing) {
                 currentCoroutineContext().ensureActive()
                 if (!downloadAndVerify(familyId, model, dir)) return@withContext false
@@ -233,6 +207,43 @@ class ModelManager(private val context: Context) {
             Log.i(TAG, "Translation install for '$familyId' complete=$complete (fast=$includeFast)")
             return@withContext complete
         }
+
+    /**
+     * Installs model files the user picked — typically ones another phone shared over
+     * Quick Share or Bluetooth. Each is accepted only if its SHA-256 is one the manifest
+     * publishes; see [ModelImporter].
+     */
+    suspend fun importFiles(uris: List<android.net.Uri>): ModelImporter.Report = withContext(Dispatchers.IO) {
+        val importer = ModelImporter(
+            index = ModelImporter.index(
+                ModelCatalog.languages(context),
+                ModelCatalog.translationFamilies(context),
+                store::installDir,
+                store.translationDir
+            ),
+            scratch = java.io.File(context.cacheDir, "import")
+        )
+        var report = ModelImporter.Report()
+        for ((i, uri) in uris.withIndex()) {
+            val name = displayName(uri) ?: "file ${i + 1}"
+            _progress.value = Progress.Verifying(IMPORT, name)
+            report += try {
+                context.contentResolver.openInputStream(uri)?.let { importer.import(name, it) }
+                    ?: ModelImporter.Report(rejected = listOf(name))
+            } catch (e: Exception) {
+                Log.e(TAG, "Import of $name failed: ${e.message}", e)
+                ModelImporter.Report(rejected = listOf(name))
+            }
+        }
+        Log.i(TAG, "Import: ${report.installed.size} installed, ${report.alreadyPresent.size} present, ${report.rejected.size} rejected")
+        _progress.value = Progress.Idle
+        report
+    }
+
+    private fun displayName(uri: android.net.Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    }.getOrNull()
 
     fun hasTranslation(familyId: String): Boolean =
         ModelCatalog.translationFamily(context, familyId)?.let { store.hasFamily(it) } ?: false

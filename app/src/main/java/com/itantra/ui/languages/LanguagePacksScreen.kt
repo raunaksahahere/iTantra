@@ -1,5 +1,7 @@
 package com.itantra.ui.languages
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.itantra.models.LanguageModelSpec
 import com.itantra.models.ModelCatalog
 import com.itantra.models.ModelManager
+import com.itantra.models.PackSharing
 import com.itantra.models.TranslationFamilySpec
 import com.itantra.schema.VoicePreferences
 import com.itantra.translate.TranslationRoutes
@@ -31,6 +34,7 @@ fun LanguagePacksScreen(
 ) {
     val context = LocalContext.current
     val modelManager = remember { ModelManager(context) }
+    val sharing = remember { PackSharing(context) }
     val voicePrefs = remember { VoicePreferences.getInstance(context) }
     val packs = remember { ModelCatalog.languages(context) }
     val families = remember { ModelCatalog.translationFamilies(context) }
@@ -42,6 +46,33 @@ fun LanguagePacksScreen(
     // Recomputed after each install so status badges reflect what is actually on disk.
     var refreshToken by remember { mutableStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
+    var importing by remember { mutableStateOf(false) }
+
+    // Packs received from another phone: verified by hash, installed wherever they belong.
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            importing = true
+            val report = modelManager.importFiles(uris)
+            importing = false
+            refreshToken++
+            snackbarHostState.showSnackbar(
+                buildList {
+                    if (report.installed.isNotEmpty()) add("${report.installed.size} installed")
+                    if (report.alreadyPresent.isNotEmpty()) add("${report.alreadyPresent.size} already here")
+                    if (report.rejected.isNotEmpty()) add("${report.rejected.size} not iTantra model files — skipped")
+                }.joinToString(" · ").ifEmpty { "Nothing to import" }
+            )
+        }
+    }
+
+    fun share(files: List<java.io.File>, title: String) {
+        val intent = sharing.shareIntent(files, title)
+        if (intent != null) context.startActivity(intent)
+        else scope.launch { snackbarHostState.showSnackbar("Nothing installed to share") }
+    }
 
     LaunchedEffect(progress) {
         when (val p = progress) {
@@ -80,6 +111,17 @@ fun LanguagePacksScreen(
                         )
                     }
                 },
+                actions = {
+                    if (importing) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = AccentSaffron)
+                    } else {
+                        TextButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
+                            Icon(Icons.Default.FileOpen, contentDescription = null, tint = AccentSaffron, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Import", color = AccentSaffron, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceCard)
             )
         },
@@ -93,6 +135,8 @@ fun LanguagePacksScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+
+            item { OfflineHint() }
 
             item { SectionHeader("Voice packs", "Listen and speak, one language each") }
 
@@ -109,6 +153,7 @@ fun LanguagePacksScreen(
                         modelManager.uninstall(pack.lang)
                         refreshToken++
                     },
+                    onShare = { share(sharing.voicePackFiles(pack.lang), "Share ${pack.displayName} voice pack") },
                     onToggleEnabled = { checked ->
                         if (checked) voicePrefs.enable(pack.lang) else voicePrefs.disable(pack.lang)
                     }
@@ -143,7 +188,8 @@ fun LanguagePacksScreen(
                         onUninstall = {
                             modelManager.uninstallTranslation(family.id)
                             refreshToken++
-                        }
+                        },
+                        onShare = { share(sharing.translationFiles(family.id), "Share ${family.title}") }
                     )
                 }
             }
@@ -154,6 +200,32 @@ fun LanguagePacksScreen(
 private fun ModelManager.Progress.isFor(id: String): Boolean =
     (this is ModelManager.Progress.Downloading && lang == id) ||
         (this is ModelManager.Progress.Verifying && lang == id)
+
+/** How to provision a phone that has no connection at all. */
+@Composable
+private fun OfflineHint() {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = AccentCyan.copy(alpha = 0.08f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, AccentCyan.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.WifiOff, contentDescription = null, tint = AccentCyan)
+            Text(
+                "No internet? A phone that already has a pack can send it with the share button " +
+                    "over Quick Share or Bluetooth. Tap Import here to install it — every file is " +
+                    "checked against the same fingerprints as a download.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
+        }
+    }
+}
 
 @Composable
 private fun SectionHeader(title: String, subtitle: String) {
@@ -172,7 +244,8 @@ private fun TranslationFamilyItem(
     neededBy: List<String>,
     progress: ModelManager.Progress?,
     onInstall: (withFast: Boolean) -> Unit,
-    onUninstall: () -> Unit
+    onUninstall: () -> Unit,
+    onShare: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -196,8 +269,13 @@ private fun TranslationFamilyItem(
                 }
                 when {
                     progress != null -> CircularProgressIndicator(modifier = Modifier.size(24.dp), color = AccentSaffron)
-                    installed -> IconButton(onClick = onUninstall) {
-                        Icon(Icons.Default.Delete, contentDescription = "Remove ${family.title}", tint = TextMuted, modifier = Modifier.size(18.dp))
+                    installed -> Row {
+                        IconButton(onClick = onShare) {
+                            Icon(Icons.Default.Share, contentDescription = "Share ${family.title} with another phone", tint = AccentCyan, modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = onUninstall) {
+                            Icon(Icons.Default.Delete, contentDescription = "Remove ${family.title}", tint = TextMuted, modifier = Modifier.size(18.dp))
+                        }
                     }
                     else -> OutlinedButton(
                         onClick = { onInstall(false) },
@@ -258,6 +336,7 @@ private fun LanguagePackItem(
     progress: ModelManager.Progress?,
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
+    onShare: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit
 ) {
     Card(
@@ -304,7 +383,7 @@ private fun LanguagePackItem(
                     )
                 }
 
-                StatusAction(status, progress, onInstall, onUninstall)
+                StatusAction(status, progress, onInstall, onUninstall, onShare)
             }
 
             if (progress is ModelManager.Progress.Downloading) {
@@ -365,7 +444,8 @@ private fun StatusAction(
     status: ModelManager.PackStatus,
     progress: ModelManager.Progress?,
     onInstall: () -> Unit,
-    onUninstall: () -> Unit
+    onUninstall: () -> Unit,
+    onShare: () -> Unit
 ) {
     if (progress != null) {
         CircularProgressIndicator(modifier = Modifier.size(24.dp), color = AccentSaffron)
@@ -398,6 +478,14 @@ private fun StatusAction(
                             color = AccentEmerald
                         )
                     }
+                }
+                IconButton(onClick = onShare) {
+                    Icon(
+                        Icons.Default.Share,
+                        contentDescription = "Share pack with another phone",
+                        tint = AccentCyan,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
                 IconButton(onClick = onUninstall) {
                     Icon(
