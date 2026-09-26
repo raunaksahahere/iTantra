@@ -61,6 +61,8 @@
 | 3.7 | Publish exported models: set url + sha256 in manifest.json | 🧑 | ☑ 7 Sep — STT + TTS for 9 languages, MT both families |
 | 3.5 | ⚠ Profile each language on device | 🧑 | ☐ |
 | 3.6 | Airplane-mode offline proof after one-time download | 🧑 | ☐ |
+| 3.8 | Phone-to-phone provisioning: share packs + app, import verified by SHA-256 | 🤖 | ☑ 26 Sep — needs a two-phone Quick Share / Bluetooth check |
+| 3.9 | Resumable downloads (HTTP Range), retries, free-space check | 🤖 | ☑ 26 Sep |
 
 ## Phase 4 — Offline translation ⚠ highest risk
 | # | Task | Who | Status |
@@ -89,7 +91,7 @@ English. Translation is shared, installed once into `models/mt/`.
 | 5.1 | ⚠ 3+ phone multi-hop mesh test | 🧑 | ☐ |
 | 5.2 | On-screen latency/RTF readout for demo | 🤖 | ☑ per-message STT/RTF/MT/TTS timings behind a menu switch |
 | 5.3 | Onboarding + permissions UX polish | 🤖 | ☐ |
-| 5.4 | Build signed release APK | 🤖 | ☐ |
+| 5.4 | Build signed release APK | 🤖 | ◐ builds and minifies; per-ABI splits 22 / 17 MB; signs once `keystore.properties` exists |
 | 5.7 | Trim APK: drop emulator ABIs (93.8 MB → 54.9 MB) | 🤖 | ☑ |
 | 5.5 | Demo script + submission write-up (blind-review safe) | 🤖 | ☐ |
 | 5.6 | Final dry-run of full demo | 🧑 | ☐ |
@@ -165,6 +167,15 @@ phone yet.
   no longer labelled English; only an SOS's originator can cancel it.
 - Removed: `MeshCore`/`MeshTransport` (dead duplicate transport), the no-op lock toggle,
   13 unused dependency-catalog entries.
+
+**Light and offline (second pass)**
+- A phone with packs can share them — and the APK itself — over Quick Share or Bluetooth;
+  the receiver's Import accepts a file only if its SHA-256 is in the manifest, so the whole
+  team can be provisioned from one download.
+- Downloads resume by HTTP Range after a drop, retry with backoff, and refuse to start
+  without room on the disk.
+- Release APKs split per ABI (arm64 22 MB, armv7 17 MB, universal 35 MB); the unused Wi-Fi
+  permissions are gone, INTERNET is declared explicitly.
 
 **Still needs a human with phones** — 0.3, 0.6, 1.6b, 1.7, 2.5, 3.5, 3.6, 4.4, 5.1, 6.8.
 Turn on *Show timings* for 1.6b / 3.5 / 4.4: every message reports its own STT, RTF, MT and

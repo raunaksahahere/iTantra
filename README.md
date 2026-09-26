@@ -108,6 +108,12 @@ Recognition, translation and synthesis run on the phone with ONNX Runtime. The o
 code is the one-time language-pack download, and every file is SHA-256 verified against a
 manifest that ships inside the app — no hash, no install.
 
+#### 📤 Provisioning with no internet at all
+One phone downloads a language once, then **shares it** — or the app itself — over Quick
+Share or Bluetooth. The receiver taps **Import**; each file is identified by its SHA-256
+and accepted only if the manifest publishes it, so sharing is exactly as strict as
+downloading. Downloads that do happen resume where they dropped.
+
 #### 🔐 Private by default
 Every conversation is Noise-encrypted end to end to one person. The first message of a new
 conversation waits for the handshake instead of being dropped, and each message shows
@@ -278,8 +284,10 @@ model-export/       reproducible export, verification and golden-data scripts
   collapses the moment audio is serialised into a payload.
 - **Offline means offline at runtime.** The Model Manager is the only network code, and it
   only runs for one-time downloads. Provisioning a language is like downloading an offline map.
-- **Nothing unverified gets installed.** A file is installable only when both its URL and its
-  SHA-256 are published in the manifest.
+- **Nothing unverified gets installed.** A file is installable only when its SHA-256 is
+  published in the manifest — whether it arrived by download or from another phone.
+- **Ask for as little as possible.** No Wi-Fi, contacts, camera or storage permissions; the
+  network permission exists for the one-time download and nothing else.
 - **Translation happens on receive, never on send.** If the sender translated, it would have to
   pick *one* target, and the broadcast would stop being multilingual.
 - **A failed translation says so.** Untranslated text is labelled as such, and text whose
@@ -304,9 +312,14 @@ Requires JDK 17 and an Android SDK (`local.properties` with `sdk.dir=…`).
 The debug build targets `arm64-v8a` and `armeabi-v7a` only: an emulator cannot exercise a
 Bluetooth mesh, so the x86 variants would be tens of megabytes of unused native code.
 
+**Release APKs** are split per CPU architecture — `app-arm64-v8a-release.apk` (~22 MB),
+`app-armeabi-v7a-release.apk` (~17 MB) and a universal one (~35 MB) — because a phone only
+needs its own copy of ONNX Runtime. `./gradlew assembleRelease` signs them when an untracked
+`keystore.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`) is present.
+
 **Getting speech onto a phone.** The APK bundles the voice-activity detector only; everything
-else is a download from **Language Packs**, which is the path a real user takes. To test a
-model before it is hosted anywhere, sideload it:
+else comes from **Language Packs** — downloaded, or imported from a phone that shared it. To
+test a model before it is hosted anywhere, sideload it:
 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
@@ -324,6 +337,8 @@ adb push model-export/mt/staged/. /sdcard/Android/data/com.itantra/files/models/
 | `PrivateOutboxTest` | first messages wait for the Noise handshake; TTL and per-peer caps |
 | `ConversationLogTest` | one record per message however many copies arrive; delivery only moves forward |
 | `ConversationStoreTest` | history round-trips encrypted; an unreadable file is set aside, not crashed on |
+| `VerifiedDownloaderTest` | downloads resume by HTTP Range; wrong bytes are never installed; mirror fallback |
+| `ModelImporterTest` | shared files are recognised by hash, not name, and anything unpublished is refused |
 | `ITantraMeshPayloadCodecTest` | malformed or future payloads are rejected; untagged text is not called English |
 | `IndicTransTextTest` | the IndicProcessor port matches AI4Bharat's reference on 553 golden cases |
 | `SpmBpeTokenizerTest`, `MelSpectrogramTest`, `RangePolicyTest` | tokeniser merges, NeMo-compatible features, hop/GPS range |
@@ -354,7 +369,8 @@ honest bar for a project like this.
   nine languages, cacheless and KV-cached.
 - ✅ **Built and unit-tested** — mesh transport and private-message outbox, identity and
   discovery, conversations and delivery state, typed text, read-aloud, alert mode,
-  push-to-talk, distress calls, multi-hop peers, and the Model Manager.
+  push-to-talk, distress calls, multi-hop peers, resumable downloads, and phone-to-phone
+  pack and app sharing.
 - ⏳ **Not yet proven on hardware** — two-phone discovery and delivery, SOS propagation across
   relays, push-to-talk capture, and spoken end-to-end latency. None of this can be honestly
   claimed from a desktop; BLE in particular behaves differently per radio and per
