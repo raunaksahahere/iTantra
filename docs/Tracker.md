@@ -91,7 +91,7 @@ English. Translation is shared, installed once into `models/mt/`.
 | 5.1 | ⚠ 3+ phone multi-hop mesh test | 🧑 | ☐ |
 | 5.2 | On-screen latency/RTF readout for demo | 🤖 | ☑ per-message STT/RTF/MT/TTS timings behind a menu switch |
 | 5.3 | Onboarding + permissions UX polish | 🤖 | ☐ |
-| 5.4 | Build signed release APK | 🤖 | ◐ builds and minifies; per-ABI splits 22 / 17 MB; signs once `keystore.properties` exists |
+| 5.4 | Build signed release APK | 🤖 | ☑ v1.1.0 released 26 Sep — per-ABI 22 / 17 MB, debug-key signed so it upgrades v1.0.0 in place; upgrade, launch, import and share smoke-tested on an Android 15 emulator. A real release key (`keystore.properties`) is still to be made |
 | 5.7 | Trim APK: drop emulator ABIs (93.8 MB → 54.9 MB) | 🤖 | ☑ |
 | 5.5 | Demo script + submission write-up (blind-review safe) | 🤖 | ☐ |
 | 5.6 | Final dry-run of full demo | 🧑 | ☐ |
