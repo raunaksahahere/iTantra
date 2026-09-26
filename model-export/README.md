@@ -169,30 +169,65 @@ requantised later.
 
 ## 7. Translation (IndicTrans2)
 
-Hindi ↔ English only — the two languages with real STT and TTS today.
+All ten languages, in any direction: English ↔ Indian directly, Indian ↔ Indian through
+English.
 
 **No export was needed.** MIT-licensed ONNX conversions of AI4Bharat's distilled 200M
 IndicTrans2 are published by `TigreGotico`, and the graph contract was read off the models
 themselves rather than taken from the README:
 
 ```
-encoder  input_ids [B,S] i64, attention_mask [B,S] i64  ->  last_hidden_state [B,S,512]
-decoder  input_ids [B,T] i64, encoder_attention_mask [B,S] i64,
-         encoder_hidden_states [B,S,512]                ->  logits [B,T,V] (+72 KV tensors)
+encoder       input_ids [B,S] i64, attention_mask [B,S] i64  ->  last_hidden_state [B,S,512]
+decoder       input_ids [B,T] i64, encoder_attention_mask [B,S] i64,
+              encoder_hidden_states [B,S,512]  ->  logits [B,T,V] + present.{0..17}.*
+decoder-past  input_ids [B,1], encoder_attention_mask, past_key_values.{0..17}.*
+                                               ->  logits [B,1,V] + present.*.decoder.*
 ```
 
 `decoder_start_token_id=2`, `eos=2`, `pad=1`, max source 256 tokens.
 
-### Which direction goes on which phone
+### Two families, shared by every language
 
-Translation happens **on receive**, into the reader's own language, so a phone needs only
-one direction — the one *into* the language it is set to. Files therefore live in the
-**target** language's pack directory:
+IndicTrans2 comes as one model per *direction*, each covering all 22 scheduled languages.
+They install once into `models/mt/` and serve every language on the phone:
 
-| Phone set to | Needs | Lives in | Size |
+| Family | Files (published names) | Size | Needed by |
 |---|---|---|---|
-| English | Hindi → English | `models/en/` | 226 MB |
-| Hindi | English → Hindi | `models/hi/` | 270 MB |
+| `indic-en` | `mt-hi-en-*` | 236 MB (+101 MB fast decoder) | English phones; any phone reading one Indian language from another |
+| `en-indic` | `mt-en-hi-*` | 283 MB (+194 MB fast decoder) | Every Indian-language phone |
+
+The files keep their original `hi-en` / `en-hi` names so phones provisioned before this
+change still resolve them from `models/en/` and `models/hi/`. The language-tag ids for all
+ten languages ship in the app's `manifest.json`; `export_mt_vocab.py` now writes the same
+table into `mt-meta.json`, and the app refuses a meta file that disagrees.
+
+### The text processing is part of the model
+
+IndicTrans2 was trained on text run through AI4Bharat's `IndicProcessor`: punctuation
+normalisation, `<ID1>` placeholders for numbers, URLs and e-mail, Moses tokenisation for
+English, and — for every Indic script — tokenisation plus **transliteration into
+Devanagari**. The app carries a Kotlin port (`translate/IndicTransText.kt`). It is pinned
+to the reference by 553 golden cases:
+
+```
+pip install onnxruntime==1.20.0 sentencepiece numpy IndicTransToolkit
+python make_mt_golden.py --mt mt/ --out ../app/src/test/resources/mt-golden.tsv
+```
+
+`onnxruntime` must match the app's version: int8 kernels round differently between
+releases, and greedy decoding turns a 0.01 logit difference into a different word.
+
+### Check the whole translator on real models
+
+```
+./gradlew testDebugUnitTest --tests '*IndicTrans2DesktopTest*' -PmtModels=$PWD/model-export/mt
+```
+
+Runs the Kotlin translator on the desktop JVM against the int8 models and requires every one
+of 270 translations (nine languages, both directions) to match the reference exactly, for
+both the cacheless and the KV-cached decoder. `mt/<family>/` needs the upstream
+`encoder_model.onnx`, `decoder_model.onnx`, `decoder_with_past_model.onnx` plus the files
+below.
 
 ### Rebuild the vocab files
 
@@ -207,31 +242,23 @@ the other) and must never be hardcoded.
 ./ttsenv/bin/python export_mt_vocab.py --dir mt/en-indic
 ```
 
-### Check a direction actually translates
-
-```
-./ttsenv/bin/python translate_onnx.py --dir mt/indic-en --src hi --tgt en \
-  --text "यहाँ भूकंप आया है, तीन लोग घायल हैं"
-```
-
-This drives the same greedy loop the app does. Read the output — the point is the
-translation, not the exit code.
-
 ### Put them on a phone
 
 ```
-adb push mt/staged/en/. /sdcard/Android/data/com.itantra/files/models/en/
-adb push mt/staged/hi/. /sdcard/Android/data/com.itantra/files/models/hi/
+adb shell mkdir -p /sdcard/Android/data/com.itantra/files/models/mt
+adb push mt/staged/. /sdcard/Android/data/com.itantra/files/models/mt/
 adb logcat -s TranslationManager IndicTrans2
 ```
 
-### Known limits
+### Decoding
 
-- **Greedy decoding, no KV cache.** `decoder_model.onnx` re-runs the whole prefix each
-  step, so decoding is O(n²) in output length. Switching to `decoder_with_past_model.onnx`
-  is the first optimisation if latency hurts; it is a speed fix, not a correctness one.
-- **No IndicNLP normalisation.** The reference pipeline runs an Indic normaliser and entity
-  placeholders before SentencePiece; this does NFKC only. Fine for the phrasings tested,
-  unverified for unusual orthography.
-- **Hindi and English only.** The other eight languages have no MT model here, and
-  `TranslationManager` reports that honestly rather than passing text through pretending.
+- **KV cache when available.** With `decoder-past` installed, the first step runs the full
+  decoder (which also yields the cross-attention cache) and every later step feeds one
+  token, so decoding is linear. Desktop CPU: equal on 6-token sentences, 1.6–1.9× faster on
+  25–30 tokens. Without it the app falls back to the cacheless loop.
+- The two decoders are quantised separately, so where the top two tokens are within int8
+  rounding they can choose different, equally valid words — about one sentence in eight on
+  the golden corpus. Each path is tested against the reference's own version of it.
+- **Greedy, not beam.** A subtly wrong beam is worse than an honest greedy pass.
+- **Pivoting costs a model swap.** One family is resident at a time, so Tamil → Hindi loads
+  `indic-en`, then `en-indic`. That keeps memory bounded on low-end phones.

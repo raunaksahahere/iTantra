@@ -22,6 +22,8 @@ class ModelStore(private val context: Context) {
     companion object {
         private const val TAG = "ModelStore"
         private const val DIR = "models"
+        private const val TRANSLATION_DIR = "mt"
+        private val LEGACY_TRANSLATION_DIRS = listOf("hi", "en")
     }
 
     /** Canonical install root — verified downloads land here. */
@@ -70,16 +72,34 @@ class ModelStore(private val context: Context) {
     fun missing(spec: LanguageModelSpec): List<ModelSpec> =
         spec.models.filterNot { isPresent(spec.lang, it) }
 
-    /**
-     * True when this language can translate incoming foreign text into itself.
-     *
-     * Deliberately not part of [missing]: translation is optional, and a language with a
-     * working voice loop is "ready" whether or not it can also translate.
-     */
-    fun hasTranslation(spec: LanguageModelSpec): Boolean =
-        spec.translation.isNotEmpty() && spec.translation.all { isPresent(spec.lang, it) }
+    // ---- translation --------------------------------------------------------------
 
-    /** Missing translation files, for surfacing separately from the voice pack. */
-    fun missingTranslation(spec: LanguageModelSpec): List<ModelSpec> =
-        spec.translation.filterNot { isPresent(spec.lang, it) }
+    /** Translation families install here, once, for every language that uses them. */
+    val translationDir: File get() = installDir(TRANSLATION_DIR)
+
+    /**
+     * Finds a translation file. Besides the shared `mt/` directory this also looks in the
+     * per-language directories translation used to install into (`hi/` held en->hi,
+     * `en/` held hi->en), so phones provisioned before translation became shared keep
+     * working without a re-download.
+     */
+    fun resolveTranslation(fileName: String): File? =
+        (listOf(TRANSLATION_DIR) + LEGACY_TRANSLATION_DIRS).firstNotNullOfOrNull { resolve(it, fileName) }
+
+    fun hasFamily(spec: TranslationFamilySpec): Boolean =
+        spec.files.isNotEmpty() && spec.files.all { resolveTranslation(it.fileName) != null }
+
+    fun hasFastDecoder(spec: TranslationFamilySpec): Boolean =
+        spec.fast.isNotEmpty() && spec.fast.all { resolveTranslation(it.fileName) != null }
+
+    fun missingFamily(spec: TranslationFamilySpec, includeFast: Boolean): List<ModelSpec> =
+        (if (includeFast) spec.files + spec.fast else spec.files)
+            .filter { resolveTranslation(it.fileName) == null }
+
+    /** Removes a family's installed files, wherever an install put them. */
+    fun deleteFamily(spec: TranslationFamilySpec) {
+        for (dir in listOf(TRANSLATION_DIR) + LEGACY_TRANSLATION_DIRS) {
+            for (f in spec.files + spec.fast) File(installDir(dir), f.fileName).delete()
+        }
+    }
 }

@@ -14,10 +14,15 @@ object ModelCatalog {
     private const val TAG = "ModelCatalog"
     private const val ASSET = "models/manifest.json"
 
-    @Volatile
-    private var cached: List<LanguageModelSpec>? = null
+    private data class Manifest(
+        val languages: List<LanguageModelSpec>,
+        val translation: List<TranslationFamilySpec>
+    )
 
-    fun languages(context: Context): List<LanguageModelSpec> {
+    @Volatile
+    private var cached: Manifest? = null
+
+    private fun manifest(context: Context): Manifest {
         cached?.let { return it }
         synchronized(this) {
             cached?.let { return it }
@@ -25,18 +30,28 @@ object ModelCatalog {
                 parse(context.assets.open(ASSET).bufferedReader().use { it.readText() })
             } catch (e: Exception) {
                 Log.e(TAG, "MANIFEST_LOAD_FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
-                emptyList()
+                Manifest(emptyList(), emptyList())
             }
             cached = parsed
-            Log.i(TAG, "Loaded ${parsed.size} language specs from manifest")
+            Log.i(
+                TAG,
+                "Loaded ${parsed.languages.size} language specs and " +
+                    "${parsed.translation.size} translation families from manifest"
+            )
             return parsed
         }
     }
 
+    fun languages(context: Context): List<LanguageModelSpec> = manifest(context).languages
+
+    fun translationFamilies(context: Context): List<TranslationFamilySpec> = manifest(context).translation
+
+    fun translationFamily(context: Context, id: String): TranslationFamilySpec? =
+        translationFamilies(context).firstOrNull { it.id == id }
+
     fun byLang(context: Context, lang: String): LanguageModelSpec? =
         languages(context).firstOrNull { it.lang == lang }
 
-    /** Shared by the required [models] array and the optional [translation] one. */
     private fun parseSpecs(arr: org.json.JSONArray?): List<ModelSpec> {
         if (arr == null) return emptyList()
         return (0 until arr.length()).mapNotNull { j ->
@@ -57,20 +72,35 @@ object ModelCatalog {
         }
     }
 
-    private fun parse(json: String): List<LanguageModelSpec> {
-        val arr = JSONObject(json).getJSONArray("languages")
-        return (0 until arr.length()).mapNotNull { i ->
+    private fun parse(json: String): Manifest {
+        val root = JSONObject(json)
+        val arr = root.getJSONArray("languages")
+        val languages = (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
-            val specs = parseSpecs(o.getJSONArray("models"))
-            val translation = parseSpecs(o.optJSONArray("translation"))
             LanguageModelSpec(
                 lang = o.getString("lang"),
                 displayName = o.getString("displayName"),
                 nativeName = o.getString("nativeName"),
                 bundled = o.optBoolean("bundled", false),
-                models = specs,
-                translation = translation
+                models = parseSpecs(o.getJSONArray("models"))
             )
         }
+
+        val translation = root.optJSONObject("translation")
+        val tags = translation?.optJSONObject("tags")
+        val families = translation?.optJSONArray("families")
+        val parsedFamilies = (0 until (families?.length() ?: 0)).map { i ->
+            val f = families!!.getJSONObject(i)
+            val id = f.getString("id")
+            val tagJson = tags?.optJSONObject(id)
+            TranslationFamilySpec(
+                id = id,
+                title = f.optString("title", id),
+                files = parseSpecs(f.optJSONArray("files")),
+                fast = parseSpecs(f.optJSONArray("fast")),
+                tags = tagJson?.keys()?.asSequence()?.associateWith { tagJson.getInt(it) }.orEmpty()
+            )
+        }
+        return Manifest(languages, parsedFamilies)
     }
 }

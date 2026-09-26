@@ -2,26 +2,24 @@
   "_comment": [
     "iTantra language-pack manifest.",
     "",
-    "STT — PUBLISHED AND VERIFIED (Apache-2.0):",
-    "  parismitaglobalsolutions/indicconformer-sherpa-onnx",
-    "  int8 ONNX exports of ai4bharat/indicconformer_stt_*_hybrid_ctc_rnnt_large (CTC-only).",
-    "  Graph contract confirmed on 2 Sep 2026: input audio_signal [B,80,T] float32 +",
-    "  length [B] int64; output logprobs [B,T/4,5633]; normalize_type=per_feature;",
-    "  subsampling_factor=4; blank token '<blk>' at id 5632 INSIDE the vocabulary.",
-    "  Odia (or) has no published export — it is the one gap in the 10.",
+    "Voice packs (per language): IndicConformer STT (int8 ONNX, Apache-2.0, from",
+    "  parismitaglobalsolutions/indicconformer-sherpa-onnx) and FastPitch + HiFi-GAN TTS",
+    "  exported by model-export/ (MIT). Odia has no published STT export and so no pack.",
     "",
-    "TTS — NOT YET PUBLISHED. Upstream AI4Bharat Indic-TTS ships PyTorch checkpoints,",
-    "  not mobile ONNX. Export FastPitch + HiFi-GAN, then fill in url + sha256 below.",
+    "Translation (shared, not per language): the two IndicTrans2 distilled-200M families,",
+    "  MIT-licensed int8 ONNX conversions by TigreGotico. One model per direction covers every",
+    "  language; a phone needs the family that translates INTO its own language, plus",
+    "  indic-en to understand one Indian language from another (pivoting through English).",
+    "  The file names keep their original hi-en / en-hi spelling so existing installs and",
+    "  sideloads still resolve. 'fast' files are the KV-cache decoders: optional, ~1.7x faster",
+    "  on long sentences, and the app falls back to the cacheless decoder without them.",
     "",
     "A file is installable only once BOTH url and sha256 are set; until then the Model",
     "Manager reports 'Not published' and refuses to install rather than trusting an",
     "unverified download (Rules §19).",
     "",
     "Sideload during development (no publishing needed):",
-    "  adb push <file> /sdcard/Android/data/com.itantra/files/models/<lang>/<fileName>",
-    "",
-    "Note: huggingface.co resolved IPv6-only on the dev machine and stalled; the Model",
-    "Manager should be tested on a network where that is not the case."
+    "  adb push <file> /sdcard/Android/data/com.itantra/files/models/<lang or mt>/<fileName>"
   ],
   "languages": [
     {
@@ -70,48 +68,6 @@
           "sha256": "315cd28bbbad1aa7119f59d778f28b35666cbbfc85c2f748e2146bbf8edafb35",
           "sizeBytes": 667
         }
-      ],
-      "translation": [
-        {
-          "role": "MT_ENCODER",
-          "fileName": "mt-en-hi-encoder.int8.onnx",
-          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-encoder.int8.onnx",
-          "mirrorUrl": "",
-          "sha256": "e3af222c3235519a6a87e67e19482f927badd643b1fedc76dd0f39d6209ab8b1",
-          "sizeBytes": 74761536
-        },
-        {
-          "role": "MT_DECODER",
-          "fileName": "mt-en-hi-decoder.int8.onnx",
-          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-decoder.int8.onnx",
-          "mirrorUrl": "",
-          "sha256": "4eccdf167bf8da2d70a031f89c75472a72ba20e849afe89b87e195f9ac5025a3",
-          "sizeBytes": 203668211
-        },
-        {
-          "role": "MT_BPE_SRC",
-          "fileName": "mt-en-hi-bpe-src.tsv",
-          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-bpe-src.tsv",
-          "mirrorUrl": "",
-          "sha256": "6835801f9bc559e0328208f2bed03dfc6131ea43a665f38e0d157850b47ff048",
-          "sizeBytes": 654754
-        },
-        {
-          "role": "MT_BPE_TGT",
-          "fileName": "mt-en-hi-bpe-tgt.tsv",
-          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-bpe-tgt.tsv",
-          "mirrorUrl": "",
-          "sha256": "aa6dcca9807f91ef1045701bdd9b1ed4e39ef287a73c915b4fcd4a11692e253d",
-          "sizeBytes": 3661598
-        },
-        {
-          "role": "MT_META",
-          "fileName": "mt-en-hi-meta.json",
-          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-meta.json",
-          "mirrorUrl": "",
-          "sha256": "0f525caee0153934369dfd700b359f1d88600812b3506fcdb4f01725ab0bda6e",
-          "sizeBytes": 217
-        }
       ]
     },
     {
@@ -159,48 +115,6 @@
           "mirrorUrl": "",
           "sha256": "721ef293934a5f7554f366c57aa48742065cf98349becb0ea66e31b5525e0989",
           "sizeBytes": 481
-        }
-      ],
-      "translation": [
-        {
-          "role": "MT_ENCODER",
-          "fileName": "mt-hi-en-encoder.int8.onnx",
-          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-encoder.int8.onnx",
-          "mirrorUrl": "",
-          "sha256": "4af34ee8e31beb787e08badcb3e9aa3808bbd6d8d4c590d81cb0b73c8f640101",
-          "sizeBytes": 121038144
-        },
-        {
-          "role": "MT_DECODER",
-          "fileName": "mt-hi-en-decoder.int8.onnx",
-          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-decoder.int8.onnx",
-          "mirrorUrl": "",
-          "sha256": "70d1421b541394148b4ba458bcedf8e53639bb64c183a9bb1de81ba879c0f15e",
-          "sizeBytes": 111123188
-        },
-        {
-          "role": "MT_BPE_SRC",
-          "fileName": "mt-hi-en-bpe-src.tsv",
-          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-bpe-src.tsv",
-          "mirrorUrl": "",
-          "sha256": "d32b97f1b2176c717d7989fada51aa91cf21b4311343fa8a08c8f42a606453f1",
-          "sizeBytes": 3661683
-        },
-        {
-          "role": "MT_BPE_TGT",
-          "fileName": "mt-hi-en-bpe-tgt.tsv",
-          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-bpe-tgt.tsv",
-          "mirrorUrl": "",
-          "sha256": "f8b97576585956a3e881fcc9343fa5d88588e2432b1bf6f866b46e43e2750d88",
-          "sizeBytes": 654711
-        },
-        {
-          "role": "MT_META",
-          "fileName": "mt-hi-en-meta.json",
-          "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-meta.json",
-          "mirrorUrl": "",
-          "sha256": "d484169414ac1e6a743fa6e81ca6ed2e114f0ae1ae8f6b4034f9773b120a8faf",
-          "sizeBytes": 216
         }
       ]
     },
@@ -588,5 +502,148 @@
         }
       ]
     }
-  ]
+  ],
+  "translation": {
+    "families": [
+      {
+        "id": "indic-en",
+        "title": "Indian languages → English",
+        "files": [
+          {
+            "role": "MT_ENCODER",
+            "fileName": "mt-hi-en-encoder.int8.onnx",
+            "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-encoder.int8.onnx",
+            "mirrorUrl": "",
+            "sha256": "4af34ee8e31beb787e08badcb3e9aa3808bbd6d8d4c590d81cb0b73c8f640101",
+            "sizeBytes": 121038144
+          },
+          {
+            "role": "MT_DECODER",
+            "fileName": "mt-hi-en-decoder.int8.onnx",
+            "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-decoder.int8.onnx",
+            "mirrorUrl": "",
+            "sha256": "70d1421b541394148b4ba458bcedf8e53639bb64c183a9bb1de81ba879c0f15e",
+            "sizeBytes": 111123188
+          },
+          {
+            "role": "MT_BPE_SRC",
+            "fileName": "mt-hi-en-bpe-src.tsv",
+            "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-bpe-src.tsv",
+            "mirrorUrl": "",
+            "sha256": "d32b97f1b2176c717d7989fada51aa91cf21b4311343fa8a08c8f42a606453f1",
+            "sizeBytes": 3661683
+          },
+          {
+            "role": "MT_BPE_TGT",
+            "fileName": "mt-hi-en-bpe-tgt.tsv",
+            "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-bpe-tgt.tsv",
+            "mirrorUrl": "",
+            "sha256": "f8b97576585956a3e881fcc9343fa5d88588e2432b1bf6f866b46e43e2750d88",
+            "sizeBytes": 654711
+          },
+          {
+            "role": "MT_META",
+            "fileName": "mt-hi-en-meta.json",
+            "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/en/mt-hi-en-meta.json",
+            "mirrorUrl": "",
+            "sha256": "d484169414ac1e6a743fa6e81ca6ed2e114f0ae1ae8f6b4034f9773b120a8faf",
+            "sizeBytes": 216
+          }
+        ],
+        "fast": [
+          {
+            "role": "MT_DECODER_PAST",
+            "fileName": "mt-hi-en-decoder-past.int8.onnx",
+            "url": "https://huggingface.co/TigreGotico/indictrans2-indic-en-dist-200M-onnx/resolve/12ead62b4a390603b6c84dc12e1cf0a17e97639b/int8/decoder_with_past_model.onnx",
+            "mirrorUrl": "",
+            "sha256": "ac79f09bd222d9c136096165b1749cd28210cc4514dc1ecf8061c27e4c7ddf2b",
+            "sizeBytes": 101393028
+          }
+        ]
+      },
+      {
+        "id": "en-indic",
+        "title": "English → Indian languages",
+        "files": [
+          {
+            "role": "MT_ENCODER",
+            "fileName": "mt-en-hi-encoder.int8.onnx",
+            "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-encoder.int8.onnx",
+            "mirrorUrl": "",
+            "sha256": "e3af222c3235519a6a87e67e19482f927badd643b1fedc76dd0f39d6209ab8b1",
+            "sizeBytes": 74761536
+          },
+          {
+            "role": "MT_DECODER",
+            "fileName": "mt-en-hi-decoder.int8.onnx",
+            "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-decoder.int8.onnx",
+            "mirrorUrl": "",
+            "sha256": "4eccdf167bf8da2d70a031f89c75472a72ba20e849afe89b87e195f9ac5025a3",
+            "sizeBytes": 203668211
+          },
+          {
+            "role": "MT_BPE_SRC",
+            "fileName": "mt-en-hi-bpe-src.tsv",
+            "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-bpe-src.tsv",
+            "mirrorUrl": "",
+            "sha256": "6835801f9bc559e0328208f2bed03dfc6131ea43a665f38e0d157850b47ff048",
+            "sizeBytes": 654754
+          },
+          {
+            "role": "MT_BPE_TGT",
+            "fileName": "mt-en-hi-bpe-tgt.tsv",
+            "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-bpe-tgt.tsv",
+            "mirrorUrl": "",
+            "sha256": "aa6dcca9807f91ef1045701bdd9b1ed4e39ef287a73c915b4fcd4a11692e253d",
+            "sizeBytes": 3661598
+          },
+          {
+            "role": "MT_META",
+            "fileName": "mt-en-hi-meta.json",
+            "url": "https://huggingface.co/RaunakSaha/echobharat-models/resolve/main/mt/hi/mt-en-hi-meta.json",
+            "mirrorUrl": "",
+            "sha256": "0f525caee0153934369dfd700b359f1d88600812b3506fcdb4f01725ab0bda6e",
+            "sizeBytes": 217
+          }
+        ],
+        "fast": [
+          {
+            "role": "MT_DECODER_PAST",
+            "fileName": "mt-en-hi-decoder-past.int8.onnx",
+            "url": "https://huggingface.co/TigreGotico/indictrans2-en-indic-dist-200M-onnx/resolve/4c9aeb9ed0d5917b04b1bb542e03726e5b1ce27e/int8/decoder_with_past_model.onnx",
+            "mirrorUrl": "",
+            "sha256": "6585dc115b3128d9d1b6bfdbc970afc10947217fdbe5b493a565a59e490c5053",
+            "sizeBytes": 193938051
+          }
+        ]
+      }
+    ],
+    "_tagsComment": "FLORES language-tag ids, read from each family's dict.SRC.json. They differ by direction (hin_Deva is 8 one way and 15 the other), so hardcoding one silently corrupts the other.",
+    "tags": {
+      "indic-en": {
+        "eng_Latn": 4,
+        "hin_Deva": 8,
+        "ben_Beng": 10,
+        "guj_Gujr": 17,
+        "kan_Knda": 14,
+        "mal_Mlym": 13,
+        "mar_Deva": 18,
+        "ory_Orya": 48,
+        "tam_Taml": 16,
+        "tel_Telu": 15
+      },
+      "en-indic": {
+        "eng_Latn": 4,
+        "hin_Deva": 15,
+        "ben_Beng": 17,
+        "guj_Gujr": 28,
+        "kan_Knda": 20,
+        "mal_Mlym": 19,
+        "mar_Deva": 29,
+        "ory_Orya": 69,
+        "tam_Taml": 27,
+        "tel_Telu": 21
+      }
+    }
+  }
 }

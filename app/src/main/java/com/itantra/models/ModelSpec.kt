@@ -26,8 +26,11 @@ enum class ModelRole {
     /** IndicTrans2 encoder (ONNX). */
     MT_ENCODER,
 
-    /** IndicTrans2 decoder (ONNX). */
+    /** IndicTrans2 decoder (ONNX), cacheless: runs every step, and the first cached one. */
     MT_DECODER,
+
+    /** IndicTrans2 decoder taking past key/values — optional, makes decoding linear. */
+    MT_DECODER_PAST,
 
     /** BPE vocabulary for the translation source side. */
     MT_BPE_SRC,
@@ -35,7 +38,7 @@ enum class ModelRole {
     /** BPE vocabulary for the translation target side. */
     MT_BPE_TGT,
 
-    /** Language-tag ids and vocabulary sizes for one translation direction. */
+    /** Vocabulary sizes (and the hi/en tag ids) for one translation family. */
     MT_META
 }
 
@@ -65,15 +68,7 @@ data class LanguageModelSpec(
     val displayName: String,
     val nativeName: String,
     val bundled: Boolean,
-    val models: List<ModelSpec>,
-    /**
-     * Files for translating *into* this language, kept out of [models] on purpose.
-     *
-     * Translation is optional and roughly as large again as the voice pack, so counting
-     * it towards pack completeness would report Hindi as "not ready" for want of a
-     * feature the voice loop deliberately does not depend on.
-     */
-    val translation: List<ModelSpec> = emptyList()
+    val models: List<ModelSpec>
 ) {
     fun of(role: ModelRole): ModelSpec? = models.firstOrNull { it.role == role }
 
@@ -83,7 +78,27 @@ data class LanguageModelSpec(
     }
 
     val totalBytes: Long get() = models.sumOf { it.sizeBytes }
+}
 
-    /** Size of the optional translation download, separate from [totalBytes]. */
-    val translationBytes: Long get() = translation.sumOf { it.sizeBytes }
+/**
+ * One IndicTrans2 model family — a single direction that covers every language.
+ *
+ * Translation is shared, not per language: `en-indic` turns English into any of the
+ * Indian languages and `indic-en` does the reverse, so installing one serves every
+ * language that needs it. Kept apart from [LanguageModelSpec] on purpose — it is optional
+ * and larger than a voice pack, and the voice loop never depends on it.
+ *
+ * @param fast the KV-cache decoder: optional, installable separately, used when present.
+ * @param tags FLORES tag (e.g. "tam_Taml") -> graph id in this family's source vocabulary.
+ */
+data class TranslationFamilySpec(
+    val id: String,
+    val title: String,
+    val files: List<ModelSpec>,
+    val fast: List<ModelSpec>,
+    val tags: Map<String, Int>
+) {
+    fun of(role: ModelRole): ModelSpec? = (files + fast).firstOrNull { it.role == role }
+    val bytes: Long get() = files.sumOf { it.sizeBytes }
+    val fastBytes: Long get() = fast.sumOf { it.sizeBytes }
 }

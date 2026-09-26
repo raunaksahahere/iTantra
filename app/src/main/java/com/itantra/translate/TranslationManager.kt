@@ -2,12 +2,17 @@ package com.itantra.translate
 
 import android.content.Context
 import android.util.Log
+import com.itantra.models.ModelCatalog
+import com.itantra.models.ModelRole
 import com.itantra.models.ModelStore
+import com.itantra.models.TranslationFamilySpec
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -21,9 +26,8 @@ import kotlinx.coroutines.withContext
  * different languages at once, each hearing their own — which is the point of a
  * multilingual mesh, and is only possible because translation happens on receive.
  *
- * A direct consequence: a phone only ever needs the direction *into* its own language, so
- * a Hindi handset carries en→hi and not both. Model files live in the target language's
- * pack directory for exactly that reason.
+ * Any of the ten languages can be translated into any other: English ↔ Indian directly,
+ * Indian ↔ Indian through English (see [TranslationRoutes]).
  *
  * Translating never throws. A failure surfaces as [Outcome.Failed] and callers fall back
  * to showing the original text *marked as untranslated* — presenting an untranslated
@@ -34,16 +38,12 @@ class TranslationManager(private val context: Context) {
     companion object {
         private const val TAG = "TranslationManager"
 
-        /** Pairs with a published model today. Everything else is honestly unsupported. */
-        val SUPPORTED_PAIRS = setOf("hi->en", "en->hi")
-
-        fun isSupported(source: String, target: String) =
-            "$source->$target" in SUPPORTED_PAIRS
+        fun isSupported(source: String, target: String) = TranslationRoutes.route(source, target) != null
     }
 
     sealed interface State {
         data object Idle : State
-        data class Loading(val direction: String) : State
+        data class Loading(val family: String) : State
         data class Translating(val direction: String) : State
         data class Unavailable(val reason: TranslationUnavailable) : State
     }
@@ -58,7 +58,15 @@ class TranslationManager(private val context: Context) {
     sealed interface Outcome {
         /** Source language already matches the reader's language. */
         data class NotNeeded(val text: String) : Outcome
-        data class Translated(val text: String, val original: String, val millis: Long) : Outcome
+
+        /** [via] names the pivot language when two models were chained, else null. */
+        data class Translated(
+            val text: String,
+            val original: String,
+            val millis: Long,
+            val via: String? = null
+        ) : Outcome
+
         data class Failed(val original: String, val reason: TranslationUnavailable) : Outcome
     }
 
@@ -67,24 +75,27 @@ class TranslationManager(private val context: Context) {
 
     /** Held while an engine is translating, so [release] cannot close it mid-run. */
     private val useLock = Mutex()
-    private val scope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + Dispatchers.Default
-    )
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
     private var engine: TranslationEngine? = null
 
-    /** True when every file for this direction is already on disk. */
-    fun isAvailable(source: String, target: String): Boolean {
-        if (!isSupported(source, target)) return false
-        return missingFiles(source, target).isEmpty()
+    private fun familySpec(id: String): TranslationFamilySpec? = ModelCatalog.translationFamily(context, id)
+
+    /** Files still needed to translate [source] into [target]; empty when ready. */
+    fun missingFiles(source: String, target: String): List<String> {
+        val route = TranslationRoutes.route(source, target) ?: return emptyList()
+        return route.map { it.family }.distinct().flatMap { id ->
+            val spec = familySpec(id) ?: return@flatMap listOf("<$id not in manifest>")
+            store.missingFamily(spec, includeFast = false).map { it.fileName }
+        }
     }
 
-    fun missingFiles(source: String, target: String): List<String> =
-        IndicTrans2Translator.fileNames(source, target)
-            .filter { store.resolve(target, it) == null }
+    /** True when every model on the route is already on disk. */
+    fun isAvailable(source: String, target: String): Boolean =
+        isSupported(source, target) && missingFiles(source, target).isEmpty()
 
     /**
      * Translates [text] from [source] into [target].
@@ -94,10 +105,10 @@ class TranslationManager(private val context: Context) {
      * for its own language.
      */
     suspend fun translate(text: String, source: String, target: String): Outcome {
-        if (source == target) return Outcome.NotNeeded(text)
-        if (text.isBlank()) return Outcome.NotNeeded(text)
+        if (source == target || text.isBlank()) return Outcome.NotNeeded(text)
 
-        if (!isSupported(source, target)) {
+        val route = TranslationRoutes.route(source, target)
+        if (route == null) {
             Log.i(TAG, "no model for $source->$target; passing text through untranslated")
             return Outcome.Failed(text, TranslationUnavailable.UnsupportedPair(source, target))
         }
@@ -112,68 +123,73 @@ class TranslationManager(private val context: Context) {
         }
 
         val started = System.currentTimeMillis()
-        val translated = useLock.withLock {
-            val engine = engineFor(source, target)
-                ?: return Outcome.Failed(
+        var current = text
+        for (hop in route) {
+            val translated = useLock.withLock {
+                val active = engineFor(hop.family)
+                    ?: return Outcome.Failed(
+                        text,
+                        TranslationUnavailable.LoadFailed("${hop.source}->${hop.target}", "engine unavailable")
+                    )
+                _state.value = State.Translating("${hop.source}->${hop.target}")
+                withContext(Dispatchers.Default) { active.translate(current, hop.source, hop.target) }
+            }
+            if (translated.isNullOrBlank()) {
+                _state.value = State.Idle
+                Log.e(TAG, "TRANSLATION_FAILED[${hop.source}->${hop.target}]")
+                return Outcome.Failed(
                     text,
-                    TranslationUnavailable.LoadFailed("$source->$target", "engine unavailable")
+                    TranslationUnavailable.LoadFailed("${hop.source}->${hop.target}", "inference returned nothing")
                 )
-            _state.value = State.Translating("$source->$target")
-            withContext(Dispatchers.Default) { engine.translate(text) }
+            }
+            current = translated
         }
-        val elapsed = System.currentTimeMillis() - started
         _state.value = State.Idle
 
-        return if (translated.isNullOrBlank()) {
-            Log.e(TAG, "TRANSLATION_FAILED[$source->$target] after ${elapsed}ms")
-            Outcome.Failed(
-                text,
-                TranslationUnavailable.LoadFailed("$source->$target", "inference returned nothing")
-            )
-        } else {
-            Outcome.Translated(translated, text, elapsed)
-        }
+        val via = route.takeIf { it.size > 1 }?.first()?.target
+        return Outcome.Translated(current, text, System.currentTimeMillis() - started, via)
     }
 
     /**
-     * One direction is resident at a time, mirroring TtsManager's single-voice rule — two
-     * loaded IndicTrans2 pairs would be roughly 450 MB of mapped model on a phone that
-     * also holds STT and TTS.
+     * One family is resident at a time, mirroring TtsManager's single-voice rule — both
+     * would be roughly 500 MB on a phone that also holds STT and TTS. A pivoted
+     * translation therefore swaps models mid-way; that is the price of fitting in memory.
      */
-    private suspend fun engineFor(source: String, target: String): TranslationEngine? =
-        loadLock.withLock {
-            engine?.let {
-                if (it.sourceLang == source && it.targetLang == target) return@withLock it
-                Log.i(TAG, "Switching MT ${it.sourceLang}->${it.targetLang} to $source->$target")
-                runCatching { it.close() }
-                engine = null
-            }
-
-            _state.value = State.Loading("$source->$target")
-            val opened = withContext(Dispatchers.IO) {
-                IndicTrans2Translator.open(source, target) { name -> store.resolve(target, name) }
-            }
-            _state.value = State.Idle
-
-            opened.fold(
-                onSuccess = {
-                    Log.i(TAG, "Loaded MT $source->$target")
-                    engine = it
-                    it
-                },
-                onFailure = {
-                    Log.e(TAG, "MT load failed for $source->$target: ${it.message}", it)
-                    _state.value = State.Unavailable(
-                        TranslationUnavailable.LoadFailed(
-                            "$source->$target", it.message ?: it.javaClass.simpleName
-                        )
-                    )
-                    null
-                }
-            )
+    private suspend fun engineFor(family: String): TranslationEngine? = loadLock.withLock {
+        engine?.let {
+            if (it.family == family) return@withLock it
+            Log.i(TAG, "Switching MT ${it.family} -> $family")
+            runCatching { it.close() }
+            engine = null
         }
 
-    /** Frees the loaded direction once any translation in flight has finished. */
+        val spec = familySpec(family) ?: return@withLock null
+        _state.value = State.Loading(family)
+        val opened = withContext(Dispatchers.IO) {
+            val files = (spec.files + spec.fast).mapNotNull { m ->
+                store.resolveTranslation(m.fileName)?.let { m.role to it }
+            }.toMap<ModelRole, java.io.File>()
+            IndicTrans2Translator.open(family, files, spec.tags)
+        }
+        _state.value = State.Idle
+
+        opened.fold(
+            onSuccess = {
+                Log.i(TAG, "Loaded MT $family (${if (it.cached) "KV-cached" else "cacheless"} decoding)")
+                engine = it
+                it
+            },
+            onFailure = {
+                Log.e(TAG, "MT load failed for $family: ${it.message}", it)
+                _state.value = State.Unavailable(
+                    TranslationUnavailable.LoadFailed(family, it.message ?: it.javaClass.simpleName)
+                )
+                null
+            }
+        )
+    }
+
+    /** Frees the loaded family once any translation in flight has finished. */
     fun release() {
         scope.launch {
             useLock.withLock {

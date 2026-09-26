@@ -36,7 +36,9 @@ data class StoredTranslation(
     val target: String,
     val status: Status,
     val text: String? = null,
-    val millis: Long? = null
+    val millis: Long? = null,
+    /** The pivot language when two models were chained (Tamil → English → Hindi). */
+    val via: String? = null
 ) {
     enum class Status {
         /** [text] is the message in [target]. */

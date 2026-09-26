@@ -149,7 +149,9 @@ private fun BubbleHeader(type: MessageType, srcLang: String, isAlert: Boolean, o
 private fun TranslationNote(translation: StoredTranslation, srcLang: String, original: String) {
     val (text, color) = when (translation.status) {
         StoredTranslation.Status.TRANSLATED ->
-            "translated from ${Languages.badge(srcLang)} · $original" to TextMuted
+            "translated from ${Languages.badge(srcLang)}" +
+                translation.via?.let { " via ${Languages.badge(it)}" }.orEmpty() +
+                " · $original" to TextMuted
         StoredTranslation.Status.UNAVAILABLE ->
             "shown as received — no ${Languages.badge(srcLang)}→${Languages.badge(translation.target)} " +
                 "translation on this phone" to AccentAlert

@@ -18,7 +18,9 @@ import androidx.compose.ui.unit.sp
 import com.itantra.models.LanguageModelSpec
 import com.itantra.models.ModelCatalog
 import com.itantra.models.ModelManager
+import com.itantra.models.TranslationFamilySpec
 import com.itantra.schema.VoicePreferences
+import com.itantra.translate.TranslationRoutes
 import com.itantra.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -31,6 +33,8 @@ fun LanguagePacksScreen(
     val modelManager = remember { ModelManager(context) }
     val voicePrefs = remember { VoicePreferences.getInstance(context) }
     val packs = remember { ModelCatalog.languages(context) }
+    val families = remember { ModelCatalog.translationFamilies(context) }
+    val activeLanguage by voicePrefs.activeLanguage.collectAsState()
     val progress by modelManager.progress.collectAsState()
     val enabledLanguages by voicePrefs.enabledLanguages.collectAsState()
     val scope = rememberCoroutineScope()
@@ -43,7 +47,10 @@ fun LanguagePacksScreen(
         when (val p = progress) {
             is ModelManager.Progress.Done -> {
                 refreshToken++
-                snackbarHostState.showSnackbar("${p.lang.uppercase()} pack installed")
+                val family = families.firstOrNull { it.id == p.lang }
+                snackbarHostState.showSnackbar(
+                    if (family != null) "${family.title} installed" else "${p.lang.uppercase()} pack installed"
+                )
             }
             is ModelManager.Progress.Failed -> {
                 refreshToken++
@@ -87,27 +94,16 @@ fun LanguagePacksScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
+            item { SectionHeader("Voice packs", "Listen and speak, one language each") }
+
             items(packs, key = { it.lang }) { pack ->
                 val status = remember(pack.lang, refreshToken) { modelManager.status(pack.lang) }
-                val busy = progress.let {
-                    (it is ModelManager.Progress.Downloading && it.lang == pack.lang) ||
-                        (it is ModelManager.Progress.Verifying && it.lang == pack.lang)
-                }
-                val hasTranslation = remember(pack.lang, refreshToken) {
-                    modelManager.hasTranslation(pack.lang)
-                }
+                val busy = progress.isFor(pack.lang)
                 LanguagePackItem(
                     pack = pack,
                     status = status,
                     enabled = pack.lang in enabledLanguages,
                     progress = progress.takeIf { busy },
-                    hasTranslation = hasTranslation,
-                    onInstallTranslation = {
-                        scope.launch {
-                            modelManager.installTranslation(pack.lang)
-                            refreshToken++
-                        }
-                    },
                     onInstall = { scope.launch { modelManager.install(pack.lang) } },
                     onUninstall = {
                         modelManager.uninstall(pack.lang)
@@ -117,6 +113,138 @@ fun LanguagePacksScreen(
                         if (checked) voicePrefs.enable(pack.lang) else voicePrefs.disable(pack.lang)
                     }
                 )
+            }
+
+            if (families.isNotEmpty()) {
+                item {
+                    SectionHeader(
+                        "Translation",
+                        "Optional. Shared by every language — install once. Incoming messages " +
+                            "are translated into your language on this phone."
+                    )
+                }
+                items(families, key = { "mt-${it.id}" }) { family ->
+                    val installed = remember(family.id, refreshToken) { modelManager.hasTranslation(family.id) }
+                    val fast = remember(family.id, refreshToken) { modelManager.hasFastTranslation(family.id) }
+                    val neededBy = enabledLanguages.filter { family.id in TranslationRoutes.familiesFor(it) }
+                    TranslationFamilyItem(
+                        family = family,
+                        installed = installed,
+                        fast = fast,
+                        neededByActive = family.id in TranslationRoutes.familiesFor(activeLanguage),
+                        neededBy = neededBy.mapNotNull { l -> packs.firstOrNull { it.lang == l }?.displayName },
+                        progress = progress.takeIf { it.isFor(family.id) },
+                        onInstall = { withFast ->
+                            scope.launch {
+                                modelManager.installTranslation(family.id, includeFast = withFast)
+                                refreshToken++
+                            }
+                        },
+                        onUninstall = {
+                            modelManager.uninstallTranslation(family.id)
+                            refreshToken++
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun ModelManager.Progress.isFor(id: String): Boolean =
+    (this is ModelManager.Progress.Downloading && lang == id) ||
+        (this is ModelManager.Progress.Verifying && lang == id)
+
+@Composable
+private fun SectionHeader(title: String, subtitle: String) {
+    Column(modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Text(subtitle, style = MaterialTheme.typography.labelSmall, color = TextMuted)
+    }
+}
+
+@Composable
+private fun TranslationFamilyItem(
+    family: TranslationFamilySpec,
+    installed: Boolean,
+    fast: Boolean,
+    neededByActive: Boolean,
+    neededBy: List<String>,
+    progress: ModelManager.Progress?,
+    onInstall: (withFast: Boolean) -> Unit,
+    onUninstall: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (neededByActive && !installed) AccentSaffron else BorderSubtle
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(family.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(
+                        "IndicTrans2 · ~${family.bytes / 1_000_000} MB",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
+                }
+                when {
+                    progress != null -> CircularProgressIndicator(modifier = Modifier.size(24.dp), color = AccentSaffron)
+                    installed -> IconButton(onClick = onUninstall) {
+                        Icon(Icons.Default.Delete, contentDescription = "Remove ${family.title}", tint = TextMuted, modifier = Modifier.size(18.dp))
+                    }
+                    else -> OutlinedButton(
+                        onClick = { onInstall(false) },
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, AccentSaffron),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentSaffron),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Download", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            if (progress is ModelManager.Progress.Downloading) {
+                LinearProgressIndicator(
+                    progress = { progress.fraction },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = AccentSaffron,
+                    trackColor = SurfaceVariantBg
+                )
+            }
+
+            Text(
+                text = if (neededBy.isEmpty()) "Not needed by the languages you have enabled"
+                else "Used by " + neededBy.joinToString(", "),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (neededByActive && !installed) AccentSaffronDeep else TextSecondary,
+                fontSize = 11.sp
+            )
+
+            if (installed && family.fast.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (fast) "Faster decoding on" else "Faster decoding (+${family.fastBytes / 1_000_000} MB, about 2× on long sentences)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (fast) AccentEmerald else TextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (!fast && progress == null) {
+                        TextButton(onClick = { onInstall(true) }) {
+                            Text("Add", fontSize = 11.sp, color = AccentSaffron, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
     }
@@ -128,8 +256,6 @@ private fun LanguagePackItem(
     status: ModelManager.PackStatus,
     enabled: Boolean,
     progress: ModelManager.Progress?,
-    hasTranslation: Boolean,
-    onInstallTranslation: () -> Unit,
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit
@@ -212,42 +338,6 @@ private fun LanguagePackItem(
                     color = TextMuted,
                     fontSize = 10.sp
                 )
-            }
-
-            // Translation is a separate, optional download: it is about as large again as
-            // the voice pack, and a language listens and speaks perfectly well without it.
-            // Only offered once the voice pack is actually installed — translating into a
-            // language this phone cannot speak would produce no audio.
-            if (pack.translation.isNotEmpty() &&
-                status == ModelManager.PackStatus.INSTALLED
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = if (hasTranslation) {
-                            "Translation ready — understands other languages"
-                        } else {
-                            "Translation " +
-                                "(+${pack.translationBytes / 1_000_000} MB, optional)"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (hasTranslation) AccentEmerald else TextSecondary,
-                        fontSize = 10.sp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (!hasTranslation) {
-                        TextButton(onClick = onInstallTranslation) {
-                            Text(
-                                "Download",
-                                fontSize = 11.sp,
-                                color = AccentSaffron,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
             }
 
             Row(

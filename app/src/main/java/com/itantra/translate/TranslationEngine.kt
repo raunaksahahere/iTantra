@@ -7,31 +7,31 @@ import java.io.Closeable
  * swapped or requantised without touching callers (Rules §8) — the same shape as
  * [com.itantra.tts.TtsEngine] and [com.itantra.stt.SttEngine].
  *
- * An engine translates in exactly one direction. That is not a simplification: under the
- * broadcast architecture a phone only ever translates *into* its own selected language,
- * so it needs one direction, not two.
+ * An engine is one model *family*: one direction of IndicTrans2 that serves every
+ * language on its far side (see [TranslationRoutes]).
  */
 interface TranslationEngine : Closeable {
 
-    /** Source language code, e.g. "hi". */
-    val sourceLang: String
+    /** [TranslationRoutes.INDIC_EN] or [TranslationRoutes.EN_INDIC]. */
+    val family: String
 
-    /** Target language code, e.g. "en". */
-    val targetLang: String
+    /** True when the KV-cache decoder is loaded and decoding is linear, not quadratic. */
+    val cached: Boolean
 
     /**
-     * Translates [text], or returns null when inference failed.
+     * Translates raw user text from [source] into [target] (app language codes).
      *
-     * Returning null rather than the original text is deliberate: callers must be able to
-     * tell a translation apart from an untranslated passthrough, because presenting
-     * untranslated text as translated is the dangerous failure in a distress message.
+     * Returns null rather than the original text when inference failed: callers must be
+     * able to tell a translation apart from an untranslated passthrough, because
+     * presenting untranslated text as translated is the dangerous failure in a distress
+     * message.
      */
-    fun translate(text: String): String?
+    fun translate(text: String, source: String, target: String): String?
 }
 
 sealed interface TranslationUnavailable {
     data class ModelMissing(val direction: String, val files: List<String>) : TranslationUnavailable
     data class LoadFailed(val direction: String, val reason: String) : TranslationUnavailable
-    /** No model published for this pair — expected for the eight languages beyond hi/en. */
+    /** No model covers this pair, e.g. a language the app does not know. */
     data class UnsupportedPair(val sourceLang: String, val targetLang: String) : TranslationUnavailable
 }

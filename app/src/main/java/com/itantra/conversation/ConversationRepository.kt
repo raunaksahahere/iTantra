@@ -232,7 +232,9 @@ class ConversationRepository private constructor(context: Context) {
                 is TranslationManager.Outcome.NotNeeded ->
                     StoredTranslation(target, StoredTranslation.Status.NOT_NEEDED)
                 is TranslationManager.Outcome.Translated ->
-                    StoredTranslation(target, StoredTranslation.Status.TRANSLATED, outcome.text, outcome.millis)
+                    StoredTranslation(
+                        target, StoredTranslation.Status.TRANSLATED, outcome.text, outcome.millis, outcome.via
+                    )
                 is TranslationManager.Outcome.Failed ->
                     StoredTranslation(target, StoredTranslation.Status.UNAVAILABLE)
             }

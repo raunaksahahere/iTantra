@@ -72,8 +72,13 @@ def main() -> int:
     meta = {
         "srcVocabSize": len(src_vocab),
         "tgtVocabSize": len(tgt_vocab),
+        # Every language the app speaks. The app ships the same table in its manifest and
+        # refuses a meta.json that disagrees with it.
         "langTagIds": {
-            tag: src_vocab[tag] for tag in ("eng_Latn", "hin_Deva") if tag in src_vocab
+            tag: src_vocab[tag] for tag in (
+                "eng_Latn", "hin_Deva", "ben_Beng", "guj_Gujr", "kan_Knda", "mal_Mlym",
+                "mar_Deva", "ory_Orya", "tam_Taml", "tel_Telu",
+            ) if tag in src_vocab
         },
         "bos": 0, "pad": 1, "eos": 2, "unk": 3,
         "decoderStartTokenId": 2,
