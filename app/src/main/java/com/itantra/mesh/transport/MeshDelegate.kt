@@ -10,6 +10,10 @@ interface MeshDelegate {
     fun didUpdatePeerList(peers: List<String>)
     fun didReceiveChannelLeave(channel: String, fromPeer: String)
     fun didReceiveDeliveryAck(messageID: String, recipientPeerID: String)
+    /** A private message left this phone (possibly after waiting for a Noise session). */
+    fun didSendPrivateMessage(messageID: String, recipientPeerID: String) {}
+    /** A private message was given up on: no session came up before it expired. */
+    fun didDropPrivateMessage(messageID: String, recipientPeerID: String) {}
     fun didReceiveReadReceipt(messageID: String, recipientPeerID: String)
     fun didReceiveVerifyChallenge(peerID: String, payload: ByteArray, timestampMs: Long) {}
     fun didReceiveVerifyResponse(peerID: String, payload: ByteArray, timestampMs: Long) {}

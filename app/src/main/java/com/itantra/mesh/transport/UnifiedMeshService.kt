@@ -220,6 +220,14 @@ class UnifiedMeshService(
         delegate?.didReceiveReadReceipt(messageID, recipientPeerID)
     }
 
+    override fun didSendPrivateMessage(messageID: String, recipientPeerID: String) {
+        delegate?.didSendPrivateMessage(messageID, recipientPeerID)
+    }
+
+    override fun didDropPrivateMessage(messageID: String, recipientPeerID: String) {
+        delegate?.didDropPrivateMessage(messageID, recipientPeerID)
+    }
+
     override fun didReceiveVerifyChallenge(peerID: String, payload: ByteArray, timestampMs: Long) {
         delegate?.didReceiveVerifyChallenge(peerID, payload, timestampMs)
     }

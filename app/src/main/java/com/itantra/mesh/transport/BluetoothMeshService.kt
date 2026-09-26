@@ -45,6 +45,9 @@ class BluetoothMeshService(private val context: Context) : TransportBridgeServic
         private const val TAG = "BluetoothMeshService"
         private val MAX_TTL: UByte = com.itantra.util.AppConstants.MESSAGE_TTL_HOPS
         private const val PEER_DISCONNECT_GRACE_MS = com.itantra.util.AppConstants.Mesh.PEER_DISCONNECT_GRACE_MS
+
+        /** How often held private messages are retried and aged out. */
+        private const val OUTBOX_RETRY_MS = 10_000L
     }
     
     // Core components - each handling specific responsibilities
@@ -54,6 +57,7 @@ class BluetoothMeshService(private val context: Context) : TransportBridgeServic
     val myPeerID: String = encryptionService.getIdentityFingerprint().take(16)
     private val peerManager = PeerManager()
     private val fragmentManager = FragmentManager()
+    private val privateOutbox = PrivateOutbox()
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val readReceiptRetrySender = RetryingControlPacketSender(serviceScope)
     private val authenticatedPeerStateStore = SecureAuthenticatedPeerStateStore(context)
@@ -134,7 +138,9 @@ class BluetoothMeshService(private val context: Context) : TransportBridgeServic
 
         encryptionService.onSessionEstablished = { peerID ->
             Log.d(TAG, "BLE Noise session established with ${peerID.take(8)}")
+            serviceScope.launch { flushOutbox(peerID) }
         }
+        startOutboxRetry()
 
         // Initialize sync manager (needs serviceScope)
         gossipSyncManager = GossipSyncManager(
@@ -1023,67 +1029,126 @@ class BluetoothMeshService(private val context: Context) : TransportBridgeServic
     } catch (_: Exception) { bytes.size.toString(16) }
     
     /**
-     * Send private message - SIMPLIFIED iOS-compatible version 
-     * Uses NoisePayloadType system exactly like iOS SimplifiedBluetoothService
+     * Sends a Noise-encrypted private message, or holds it until a session exists.
+     *
+     * bitchat started the handshake and dropped the message when no session was up yet.
+     * That lost the first line of every conversation while the sender saw it as sent, so
+     * unencryptable messages now wait in [privateOutbox] and go out the moment the session
+     * is established. The delegate hears [MeshDelegate.didSendPrivateMessage] when a
+     * message actually leaves, and [MeshDelegate.didDropPrivateMessage] if it never can.
      */
     fun sendPrivateMessage(content: String, recipientPeerID: String, recipientNickname: String, messageID: String? = null) {
         if (content.isEmpty() || recipientPeerID.isEmpty()) return
         // Nicknames are presentation metadata. Routing and encryption are bound to the peer ID,
         // so a temporarily unresolved nickname must never suppress a private message.
-        
+
         serviceScope.launch {
             val finalMessageID = messageID ?: java.util.UUID.randomUUID().toString()
 
-            // Check if we have an established Noise session
-            if (encryptionService.hasEstablishedSession(recipientPeerID)) {
-                try {
-                    // Create TLV-encoded private message exactly like iOS
-                    val privateMessage = com.itantra.mesh.model.PrivateMessagePacket(
-                        messageID = finalMessageID,
-                        content = content
-                    )
-                    
-                    val tlvData = privateMessage.encode()
-                    if (tlvData == null) {
-                        Log.e(TAG, "Failed to encode private message with TLV")
-                        return@launch
-                    }
-                    
-                    // Create message payload with NoisePayloadType prefix: [type byte] + [TLV data]
-                    val messagePayload = com.itantra.mesh.model.NoisePayload(
-                        type = com.itantra.mesh.model.NoisePayloadType.PRIVATE_MESSAGE,
-                        data = tlvData
-                    )
-                    
-                    // Encrypt the payload
-                    val encrypted = encryptionService.encrypt(messagePayload.encode(), recipientPeerID)
-                    
-                    // Create NOISE_ENCRYPTED packet exactly like iOS
-                    val packet = BitchatPacket(
-                        version = 1u,
-                        type = MessageType.NOISE_ENCRYPTED.value,
-                        senderID = hexStringToByteArray(myPeerID),
-                        recipientID = hexStringToByteArray(recipientPeerID),
-                        timestamp = System.currentTimeMillis().toULong(),
-                        payload = encrypted,
-                        signature = null,
-                        ttl = MAX_TTL
-                    )
-                    
-                    // Sign the packet before broadcasting
-                    val signedPacket = signPacketBeforeBroadcast(packet)
-                    broadcastRoutedPacket(RoutedPacket(signedPacket))
+            if (encryptionService.hasEstablishedSession(recipientPeerID) &&
+                transmitPrivateMessage(content, recipientPeerID, finalMessageID)
+            ) {
+                return@launch
+            }
+            holdForSession(recipientPeerID, finalMessageID, content)
+        }
+    }
 
-                    // The UI handles sent messages through its own sending path.
+    /** Encrypts and broadcasts one private message. False when it could not be encrypted. */
+    private fun transmitPrivateMessage(content: String, recipientPeerID: String, messageID: String): Boolean {
+        return try {
+            // Create TLV-encoded private message exactly like iOS
+            val privateMessage = com.itantra.mesh.model.PrivateMessagePacket(
+                messageID = messageID,
+                content = content
+            )
 
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to encrypt private message for $recipientPeerID: ${e.message}")
+            val tlvData = privateMessage.encode()
+            if (tlvData == null) {
+                Log.e(TAG, "Failed to encode private message with TLV")
+                delegate?.didDropPrivateMessage(messageID, recipientPeerID)
+                return true // unencodable content will not improve by waiting
+            }
+
+            // Create message payload with NoisePayloadType prefix: [type byte] + [TLV data]
+            val messagePayload = com.itantra.mesh.model.NoisePayload(
+                type = com.itantra.mesh.model.NoisePayloadType.PRIVATE_MESSAGE,
+                data = tlvData
+            )
+
+            val encrypted = encryptionService.encrypt(messagePayload.encode(), recipientPeerID)
+
+            // Create NOISE_ENCRYPTED packet exactly like iOS
+            val packet = BitchatPacket(
+                version = 1u,
+                type = MessageType.NOISE_ENCRYPTED.value,
+                senderID = hexStringToByteArray(myPeerID),
+                recipientID = hexStringToByteArray(recipientPeerID),
+                timestamp = System.currentTimeMillis().toULong(),
+                payload = encrypted,
+                signature = null,
+                ttl = MAX_TTL
+            )
+
+            // Sign the packet before broadcasting
+            val signedPacket = signPacketBeforeBroadcast(packet)
+            broadcastRoutedPacket(RoutedPacket(signedPacket))
+            delegate?.didSendPrivateMessage(messageID, recipientPeerID)
+            true
+        } catch (e: Exception) {
+            // Usually the session was torn down between the check and the encrypt.
+            Log.w(TAG, "Could not encrypt private message for $recipientPeerID: ${e.message}")
+            false
+        }
+    }
+
+    private fun holdForSession(peerID: String, messageID: String, content: String) {
+        val evicted = privateOutbox.enqueue(peerID, messageID, content)
+        evicted.forEach {
+            Log.w(TAG, "Outbox full for ${peerID.take(8)}; dropping oldest ${it.messageID}")
+            delegate?.didDropPrivateMessage(it.messageID, it.peerID)
+        }
+        Log.i(
+            TAG,
+            "Holding private message $messageID for ${peerID.take(8)} until a Noise session " +
+                "exists (${privateOutbox.size(peerID)} waiting)"
+        )
+        messageHandler.delegate?.initiateNoiseHandshake(peerID)
+    }
+
+    /** Sends everything waiting for [peerID]; anything that still cannot go is re-held. */
+    private fun flushOutbox(peerID: String) {
+        val pending = privateOutbox.drain(peerID)
+        if (pending.isEmpty()) return
+        Log.i(TAG, "Noise session with ${peerID.take(8)} is up; sending ${pending.size} held message(s)")
+        for (p in pending) {
+            if (!transmitPrivateMessage(p.content, p.peerID, p.messageID)) {
+                privateOutbox.enqueue(p.peerID, p.messageID, p.content)
+            }
+        }
+    }
+
+    /**
+     * Keeps held messages moving: flushes peers whose session came up without us hearing
+     * about it, re-asks for handshakes that were lost on the way, and gives up on messages
+     * that have waited past the outbox TTL.
+     */
+    private fun startOutboxRetry() {
+        serviceScope.launch {
+            // Ends with serviceScope: delay() throws once stopServices() cancels it.
+            while (true) {
+                delay(OUTBOX_RETRY_MS)
+                privateOutbox.expire().forEach {
+                    Log.w(TAG, "Giving up on ${it.messageID} for ${it.peerID.take(8)}: no session in time")
+                    delegate?.didDropPrivateMessage(it.messageID, it.peerID)
                 }
-            } else {
-                // Fire and forget - initiate handshake but don't queue exactly like iOS
-                messageHandler.delegate?.initiateNoiseHandshake(recipientPeerID)
-                
-                // The UI handles sent messages through its own sending path.
+                for (peer in privateOutbox.waitingPeers()) {
+                    if (encryptionService.hasEstablishedSession(peer)) {
+                        flushOutbox(peer)
+                    } else {
+                        messageHandler.delegate?.initiateNoiseHandshake(peer)
+                    }
+                }
             }
         }
     }
