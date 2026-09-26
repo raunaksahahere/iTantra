@@ -42,6 +42,11 @@ internal fun PushToTalkButton(
     onRelease: () -> Unit
 ) {
     var pressed by remember { mutableStateOf(false) }
+    // The gesture handler outlives recompositions; read the latest callbacks through
+    // these, or a language or alert-mode change mid-conversation would be ignored.
+    val currentOnPress by rememberUpdatedState(onPress)
+    val currentOnRelease by rememberUpdatedState(onRelease)
+    val currentOnRequestPermission by rememberUpdatedState(onRequestPermission)
     val pulse by rememberInfiniteTransition(label = "pttPulse").animateFloat(
         initialValue = 1f,
         targetValue = if (pressed) 1.15f else 1f,
@@ -69,14 +74,14 @@ internal fun PushToTalkButton(
                     detectTapGestures(
                         onPress = {
                             if (!hasMicPermission) {
-                                onRequestPermission()
+                                currentOnRequestPermission()
                                 return@detectTapGestures
                             }
                             pressed = true
-                            onPress()
+                            currentOnPress()
                             tryAwaitRelease()
                             pressed = false
-                            onRelease()
+                            currentOnRelease()
                         }
                     )
                 },
