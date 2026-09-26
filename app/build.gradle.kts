@@ -60,6 +60,12 @@ android {
         }
     }
 
+    testOptions {
+        // android.util.Log and friends return defaults instead of throwing, so plain JVM
+        // tests can exercise code that logs.
+        unitTests.isReturnDefaultValues = true
+    }
+
     lint {
         abortOnError = false
         checkReleaseBuilds = false

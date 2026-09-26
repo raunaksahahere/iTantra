@@ -2,9 +2,8 @@ package com.itantra.mesh
 
 import android.util.Log
 import com.itantra.schema.ITantraMessage
+import com.itantra.schema.Languages
 import com.itantra.schema.MessageType
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
 import java.nio.charset.StandardCharsets
 
 /**
@@ -15,14 +14,16 @@ import java.nio.charset.StandardCharsets
  * - JSON payload serialized as UTF-8 bytes.
  *
  * Fallback:
- * If an incoming payload does not have the "EB1:" prefix (e.g. from legacy bitchat client),
- * it is safely parsed as plain typed text.
+ * If an incoming payload does not have the "EB1:" prefix (e.g. from a plain bitchat client),
+ * it is parsed as typed text whose language is inferred from its script only where the
+ * script names exactly one language, and is otherwise [Languages.UNDETERMINED]. It used to
+ * be stamped "en" unconditionally, which fed Hindi from bitchat nodes to the English→Hindi
+ * translator and presented the output as a translation.
  */
 object ITantraMeshPayloadCodec {
 
     private const val TAG = "ITantraPayloadCodec"
     private const val MAGIC_PREFIX = "EB1:"
-    private val gson: Gson = GsonBuilder().create()
 
     /**
      * Encodes an ITantraMessage into wire bytes for transmission.
@@ -49,11 +50,11 @@ object ITantraMeshPayloadCodec {
                 val json = textContent.removePrefix(MAGIC_PREFIX)
                 ITantraMessage.fromJson(json)
             } else {
-                // Legacy plain text fallback
+                // Plain bitchat text: no language tag, so none is invented.
                 ITantraMessage(
                     v = 1,
                     type = MessageType.TYPED_TEXT,
-                    srcLang = "en",
+                    srcLang = Languages.guessFromScript(textContent),
                     text = textContent,
                     senderName = fallbackSenderName,
                     senderId = fallbackSenderId,

@@ -68,8 +68,12 @@ class SosManager(
     private val _announcements = MutableStateFlow<List<Active>>(emptyList())
     val announcements: StateFlow<List<Active>> = _announcements.asStateFlow()
 
-    /** Announcements the sender cancelled, kept so a late relay cannot resurrect them. */
-    private val resolved = ConcurrentHashMap.newKeySet<String>()
+    /**
+     * Announcements cancelled, mapped to who cancelled them, kept so a late relay cannot
+     * resurrect them. Recording the canceller matters: only the originator's cancellation
+     * counts, so a resolve that arrives before its SOS is checked when the SOS turns up.
+     */
+    private val resolvedBy = ConcurrentHashMap<String, String>()
 
     private var ticker: Job? = null
 
@@ -142,7 +146,7 @@ class SosManager(
 
         mesh.sendSosResolved(entry.message)
         active.remove(msgId)
-        resolved.add(msgId)
+        resolvedBy[msgId] = entry.message.senderId
         publish()
         Log.i(TAG, "SOS resolved by sender: $msgId")
         return true
@@ -150,12 +154,25 @@ class SosManager(
 
     /**
      * Records an announcement received from the mesh so this device relays it onward.
+     *
+     * A cancellation is honoured only from the phone that raised the announcement.
+     * [message].senderId for a resolve is the transport-authenticated sender, so a third
+     * party cannot silence someone else's distress call by naming its id.
      */
     fun onReceived(message: ITantraMessage) {
         when (message.type) {
             MessageType.SOS_RESOLVED -> {
                 val ref = message.refMsgId ?: return
-                resolved.add(ref)
+                val held = active[ref]
+                if (held != null && held.message.senderId != message.senderId) {
+                    Log.w(
+                        TAG,
+                        "Ignoring cancellation of SOS $ref from ${message.senderId.take(8)}: " +
+                            "only its sender ${held.message.senderId.take(8)} can resolve it"
+                    )
+                    return
+                }
+                resolvedBy[ref] = message.senderId
                 if (active.remove(ref) != null) {
                     Log.i(TAG, "SOS $ref cancelled by its sender")
                     publish()
@@ -163,7 +180,7 @@ class SosManager(
             }
 
             MessageType.SOS -> {
-                if (message.msgId in resolved) {
+                if (resolvedBy[message.msgId] == message.senderId) {
                     Log.i(TAG, "Ignoring already-resolved SOS ${message.msgId}")
                     return
                 }

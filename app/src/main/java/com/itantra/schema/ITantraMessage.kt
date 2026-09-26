@@ -98,13 +98,32 @@ data class ITantraMessage(
     companion object {
         private val gson: Gson = GsonBuilder().create()
 
+        /**
+         * Parses a payload, or returns null when it is not a usable message.
+         *
+         * Gson fills objects reflectively and ignores Kotlin nullability, so a payload
+         * missing `text`, or carrying a `type` this build does not know (a newer client's),
+         * would otherwise arrive as an object whose non-null fields are null — and crash
+         * whichever screen touched it first.
+         */
         fun fromJson(json: String): ITantraMessage? {
-            return try {
+            val parsed = try {
                 gson.fromJson(json, ITantraMessage::class.java)
             } catch (e: Exception) {
                 null
-            }
+            } ?: return null
+            return parsed.takeIf { it.isWellFormed() }
         }
+
+        @Suppress("SENSELESS_COMPARISON")
+        private fun ITantraMessage.isWellFormed(): Boolean =
+            msgId != null && msgId.isNotBlank() &&
+                type != null &&
+                text != null &&
+                senderId != null &&
+                senderName != null &&
+                deviceModel != null &&
+                srcLang != null
 
         fun fromByteArray(bytes: ByteArray): ITantraMessage? {
             return try {
