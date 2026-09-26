@@ -6,6 +6,7 @@ import com.itantra.models.ModelCatalog
 import com.itantra.models.ModelRole
 import com.itantra.models.ModelStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +27,9 @@ class TtsManager(private val context: Context) {
         private const val TAG = "TtsManager"
     }
 
+    /** What one utterance cost: [synthesisMs] to produce [audioMs] of speech. */
+    data class Spoken(val synthesisMs: Long, val audioMs: Long)
+
     sealed interface State {
         data object Idle : State
         data class Synthesizing(val lang: String) : State
@@ -36,6 +40,12 @@ class TtsManager(private val context: Context) {
     private val store = ModelStore(context)
     private val output = AudioOutput(context)
     private val loadLock = Mutex()
+
+    /** Held while an engine is synthesising, so [release] cannot close it mid-run. */
+    private val useLock = Mutex()
+    private val scope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + Dispatchers.Default
+    )
 
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
@@ -93,26 +103,32 @@ class TtsManager(private val context: Context) {
      * Synthesises and plays [text] in [lang], suspending until playback ends.
      *
      * @param alert plays at max volume, non-interruptible.
-     * @return false when the voice is unavailable or synthesis failed.
+     * @return timings for the utterance, or null when the voice is unavailable, synthesis
+     *   failed, or playback did not complete.
      */
-    suspend fun speak(text: String, lang: String, alert: Boolean = false): Boolean {
-        if (text.isBlank()) return false
+    suspend fun speak(text: String, lang: String, alert: Boolean = false): Spoken? {
+        if (text.isBlank()) return null
 
         return try {
             _state.value = State.Synthesizing(lang)
-            val active = engineFor(lang) ?: return false
-
-            val pcm = withContext(Dispatchers.Default) { active.synthesize(text) }
+            val started = android.os.SystemClock.elapsedRealtime()
+            val (pcm, sampleRate) = useLock.withLock {
+                val active = engineFor(lang) ?: return null
+                withContext(Dispatchers.Default) { active.synthesize(text) } to active.sampleRate
+            }
+            val synthesisMs = android.os.SystemClock.elapsedRealtime() - started
             if (pcm == null || pcm.isEmpty()) {
                 Log.e(TAG, "TTS_SYNTHESIS_EMPTY[$lang] for \"$text\"")
-                return false
+                return null
             }
 
+            val audioMs = pcm.size * 1000L / sampleRate
+            Log.i(TAG, "Synthesised ${audioMs}ms of [$lang] speech in ${synthesisMs}ms")
             _state.value = State.Speaking(lang, alert)
-            output.play(pcm, active.sampleRate, alert)
+            if (output.play(pcm, sampleRate, alert)) Spoken(synthesisMs, audioMs) else null
         } catch (e: Throwable) {
             Log.e(TAG, "SPEAK_FAILED[$lang]: ${e.javaClass.simpleName}: ${e.message}", e)
-            false
+            null
         } finally {
             _state.value = State.Idle
         }
@@ -121,9 +137,19 @@ class TtsManager(private val context: Context) {
     /** Stops normal playback; an alert in flight continues. */
     fun stop() = output.stop()
 
+    /**
+     * Frees the loaded voice. Playback stops at once; a synthesis in flight finishes
+     * before its session is closed. The next [speak] reloads lazily.
+     */
     fun release() {
         output.stop()
-        runCatching { engine?.close() }
-        engine = null
+        scope.launch {
+            useLock.withLock {
+                loadLock.withLock {
+                    runCatching { engine?.close() }
+                    engine = null
+                }
+            }
+        }
     }
 }

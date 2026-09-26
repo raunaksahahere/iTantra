@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Persisted voice settings: which languages the user has enabled, which one is active,
- * and whether messages go out Noise-encrypted.
+ * whether incoming speech is read aloud, and whether per-message timings are shown.
  *
  * Language choice is multi-select and sticky. After first setup the app simply works
  * with what is installed — nothing prompts on launch; a prompt appears only when the
@@ -22,8 +22,8 @@ class VoicePreferences private constructor(context: Context) {
 
         private const val KEY_ENABLED = "enabled_languages"
         private const val KEY_ACTIVE = "active_language"
-        private const val KEY_SECURE = "secure_send"
         private const val KEY_AUTO_SPEAK = "auto_speak"
+        private const val KEY_SHOW_TIMINGS = "show_timings"
 
         /** Bundled out of the box, so the app is useful before any download. */
         val DEFAULT_LANGUAGES = setOf("hi", "en")
@@ -50,11 +50,16 @@ class VoicePreferences private constructor(context: Context) {
     )
     val activeLanguage: StateFlow<String> = _activeLanguage.asStateFlow()
 
-    private val _secureSend = MutableStateFlow(prefs.getBoolean(KEY_SECURE, false))
-    val secureSend: StateFlow<Boolean> = _secureSend.asStateFlow()
 
     private val _autoSpeak = MutableStateFlow(prefs.getBoolean(KEY_AUTO_SPEAK, true))
     val autoSpeak: StateFlow<Boolean> = _autoSpeak.asStateFlow()
+
+    /**
+     * Shows recognition, translation and synthesis timings under each message — the
+     * on-device measurements the README refuses to quote until someone has taken them.
+     */
+    private val _showTimings = MutableStateFlow(prefs.getBoolean(KEY_SHOW_TIMINGS, false))
+    val showTimings: StateFlow<Boolean> = _showTimings.asStateFlow()
 
     fun enable(lang: String) {
         val next = _enabledLanguages.value + lang
@@ -84,15 +89,14 @@ class VoicePreferences private constructor(context: Context) {
         Log.i(TAG, "Active language -> $lang")
     }
 
-    fun setSecureSend(enabled: Boolean) {
-        _secureSend.value = enabled
-        prefs.edit().putBoolean(KEY_SECURE, enabled).apply()
-        Log.i(TAG, "Secure send -> $enabled")
-    }
-
     fun setAutoSpeak(enabled: Boolean) {
         _autoSpeak.value = enabled
         prefs.edit().putBoolean(KEY_AUTO_SPEAK, enabled).apply()
+    }
+
+    fun setShowTimings(enabled: Boolean) {
+        _showTimings.value = enabled
+        prefs.edit().putBoolean(KEY_SHOW_TIMINGS, enabled).apply()
     }
 
     private fun persistLanguages(next: Set<String>) {

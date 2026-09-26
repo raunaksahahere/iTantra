@@ -2,6 +2,8 @@ package com.itantra
 
 import android.app.Application
 import android.util.Log
+import com.itantra.conversation.ConversationRepository
+import com.itantra.conversation.VoiceEngines
 import com.itantra.identity.IdentityManager
 import com.itantra.mesh.service.MeshForegroundService
 import com.itantra.mesh.service.MeshServicePreferences
@@ -13,6 +15,8 @@ import com.itantra.mesh.transport.PowerManager
  * Responsibilities:
  * - Initializes process-wide power policy for BLE mesh operations.
  * - Pre-warms the local cryptographic identity.
+ * - Starts the conversation layer, so messages are kept (and alerts spoken) with no
+ *   screen open.
  * - Starts the persistent foreground service to maintain offline mesh in background.
  */
 class ITantraApplication : Application() {
@@ -41,6 +45,14 @@ class ITantraApplication : Application() {
             IdentityManager.getInstance(this)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize IdentityManager: ${e.message}", e)
+        }
+
+        // Conversations are process-wide: they must be listening before any screen is.
+        try {
+            VoiceEngines.getInstance(this).registerTrimCallbacks(this)
+            ConversationRepository.getInstance(this).start()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start conversations: ${e.message}", e)
         }
 
         // Start foreground service to keep mesh alive

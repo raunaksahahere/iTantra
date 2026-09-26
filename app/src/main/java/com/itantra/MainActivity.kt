@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.itantra.identity.IdentityManager
@@ -73,9 +74,10 @@ class MainActivity : ComponentActivity() {
                 ) {
                     // Which peer PEER_CHAT is about. Held here rather than in the
                     // screen so returning from Language Packs lands back in the same
-                    // conversation instead of dropping to the peer list.
-                    var activePeer by remember { mutableStateOf<Peer?>(null) }
-                    var currentScreen by remember {
+                    // conversation instead of dropping to the peer list. Saveable, so
+                    // rotating the phone mid-conversation no longer lands on HOME.
+                    var activePeer by rememberSaveable { mutableStateOf<Peer?>(null) }
+                    var currentScreen by rememberSaveable {
                         mutableStateOf(
                             if (identityManager.hasIdentity()) AppScreen.HOME else AppScreen.ONBOARDING
                         )
@@ -116,9 +118,11 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 TransceiverScreen(
                                     meshManager = meshManager,
-                                    identityManager = identityManager,
                                     peer = peer,
-                                    onBack = { currentScreen = AppScreen.HOME },
+                                    onBack = {
+                                        activePeer = null
+                                        currentScreen = AppScreen.HOME
+                                    },
                                     onOpenLanguages = {
                                         currentScreen = AppScreen.LANGUAGES
                                     }

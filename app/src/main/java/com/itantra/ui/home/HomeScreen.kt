@@ -19,6 +19,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.itantra.conversation.Conversation
+import com.itantra.conversation.ConversationRepository
+import com.itantra.conversation.StoredTranslation
 import com.itantra.mesh.ITantraMeshManager
 import com.itantra.schema.Peer
 import com.itantra.ui.theme.*
@@ -47,6 +50,8 @@ fun HomeScreen(
     val sosAnnouncements by meshManager.sos.announcements.collectAsState()
     val voicePrefs = remember { VoicePreferences.getInstance(context) }
     val selectedLanguage by voicePrefs.activeLanguage.collectAsState()
+    val conversations by remember { ConversationRepository.getInstance(context) }
+        .conversations.collectAsState()
     val scope = rememberCoroutineScope()
 
     var query by remember { mutableStateOf("") }
@@ -54,14 +59,22 @@ fun HomeScreen(
 
     // Match on name, device model and peer id: in a crowd the display name is often the
     // least distinctive thing about a node.
-    val filtered = remember(peers, query) {
-        val q = query.trim()
-        if (q.isEmpty()) peers
-        else peers.filter {
-            it.name.contains(q, ignoreCase = true) ||
-                it.deviceModel.contains(q, ignoreCase = true) ||
-                it.peerId.contains(q, ignoreCase = true)
-        }
+    val q = query.trim()
+    fun matches(name: String, model: String, id: String) = q.isEmpty() ||
+        name.contains(q, ignoreCase = true) ||
+        model.contains(q, ignoreCase = true) ||
+        id.contains(q, ignoreCase = true)
+
+    val filtered = remember(peers, q) { peers.filter { matches(it.name, it.deviceModel, it.peerId) } }
+
+    // Conversations kept on this phone with people who are not reachable right now. They
+    // stay openable: history is worth reading, and a message typed there waits for them.
+    val earlier = remember(conversations, peers, q) {
+        val inRange = peers.map { it.peerId }.toSet()
+        conversations.values
+            .filter { it.peerId !in inRange && it.entries.isNotEmpty() }
+            .filter { matches(it.peerName, it.deviceModel, it.peerId) }
+            .sortedByDescending { it.updatedAt }
     }
 
     Column(modifier = Modifier.fillMaxSize().background(SurfaceBg)) {
@@ -117,13 +130,28 @@ fun HomeScreen(
         )
 
         // ---- peers -----------------------------------------------------------------
-        if (filtered.isEmpty()) {
-            EmptyPeers(hasPeers = peers.isNotEmpty(), query = query)
+        if (filtered.isEmpty() && earlier.isEmpty()) {
+            EmptyPeers(hasPeers = peers.isNotEmpty() || conversations.isNotEmpty(), query = query)
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                if (filtered.isEmpty()) {
+                    item { SectionLabel("Nobody in range right now") }
+                }
                 items(filtered, key = { it.peerId }) { peer ->
-                    PeerRow(peer = peer, onClick = { onOpenPeer(peer) })
+                    PeerRow(
+                        peer = peer,
+                        conversation = conversations[peer.peerId],
+                        onClick = { onOpenPeer(peer) }
+                    )
                     HorizontalDivider(color = BorderSubtle, thickness = 0.5.dp)
+                }
+                if (earlier.isNotEmpty()) {
+                    item { SectionLabel("Earlier conversations · out of range") }
+                    items(earlier, key = { "earlier-${it.peerId}" }) { c ->
+                        val peer = Peer(peerId = c.peerId, name = c.peerName, deviceModel = c.deviceModel, hops = 0)
+                        PeerRow(peer = peer, conversation = c, inRange = false, onClick = { onOpenPeer(peer) })
+                        HorizontalDivider(color = BorderSubtle, thickness = 0.5.dp)
+                    }
                 }
             }
         }
@@ -193,7 +221,23 @@ private fun SosSection(activeCount: Int, onRaise: () -> Unit) {
 }
 
 @Composable
-private fun PeerRow(peer: Peer, onClick: () -> Unit) {
+private fun SectionLabel(text: String) {
+    Text(
+        text = text.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = TextMuted,
+        modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 6.dp)
+    )
+}
+
+@Composable
+private fun PeerRow(
+    peer: Peer,
+    conversation: Conversation?,
+    inRange: Boolean = true,
+    onClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -225,15 +269,42 @@ private fun PeerRow(peer: Peer, onClick: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1
             )
+            val last = conversation?.last
+            val preview = last?.let {
+                val shown = it.translation?.takeIf { t -> t.status == StoredTranslation.Status.TRANSLATED }?.text
+                    ?: it.message.text
+                (if (it.outgoing) "You: " else "") + shown
+            }
             Text(
-                text = peer.deviceModel.ifBlank { "Mesh node" },
-                color = TextSecondary,
+                text = preview ?: peer.deviceModel.ifBlank { "Mesh node" },
+                color = if ((conversation?.unread ?: 0) > 0) TextPrimary else TextSecondary,
+                fontWeight = if ((conversation?.unread ?: 0) > 0) FontWeight.SemiBold else FontWeight.Normal,
                 fontSize = 12.sp,
-                maxLines = 1
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
         }
 
-        HopBadge(hops = peer.hops)
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (inRange) HopBadge(hops = peer.hops)
+            val unread = conversation?.unread ?: 0
+            if (unread > 0) {
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(AccentSaffron)
+                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (unread > 99) "99+" else unread.toString(),
+                        color = SurfaceCard,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
     }
 }
 

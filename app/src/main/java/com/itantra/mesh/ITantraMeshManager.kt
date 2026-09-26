@@ -21,6 +21,20 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
+/** Where an outgoing private message is on its way to the recipient. */
+enum class Delivery {
+    /** Accepted locally; waiting for a Noise session with the recipient. */
+    QUEUED,
+    /** Encrypted and handed to the radio. */
+    SENT,
+    /** The recipient's phone acknowledged it. */
+    DELIVERED,
+    /** Given up on: no session with the recipient came up in time. */
+    FAILED
+}
+
+data class DeliveryUpdate(val msgId: String, val peerId: String, val delivery: Delivery)
+
 /**
  * Primary high-level coordinator for iTantra mesh communication.
  *
@@ -60,7 +74,20 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
     private val _isMeshRunning = MutableStateFlow(false)
     val isMeshRunning: StateFlow<Boolean> = _isMeshRunning.asStateFlow()
 
+    private val _deliveryUpdates = MutableSharedFlow<DeliveryUpdate>(extraBufferCapacity = 64)
+    val deliveryUpdates: SharedFlow<DeliveryUpdate> = _deliveryUpdates.asSharedFlow()
+
     private val locationProvider = LocationProvider(context)
+
+    /**
+     * This phone's mesh peer ID — the identity every other phone sees in its peer list and
+     * that Noise sessions, routing and delivery acks are bound to.
+     *
+     * Outgoing messages carry this, not [IdentityManager]'s separate peer ID. The two were
+     * derived from different keys, so a receiver comparing a message's sender against the
+     * peer it had open never found a match and discarded every ordinary incoming message.
+     */
+    val myPeerId: String get() = meshService?.myPeerID.orEmpty()
 
     /**
      * Distress announcements live here rather than in a screen: a phone must keep
@@ -120,125 +147,76 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
     }
 
     /**
-     * Sends an ITantraMessage over the mesh.
-     *
-     * @param message The message to transmit (text only)
-     * @param recipientPeerId Target peer ID (null for mesh broadcast to all peers)
+     * Builds a message from this phone. It is not sent: callers record it first and then
+     * hand it to [sendPrivate], so a delivery update can never outrun the record of the
+     * message it is about.
      */
-    fun sendMessage(
-        message: ITantraMessage,
-        recipientPeerId: String? = null,
-        secure: Boolean = false
-    ): Boolean {
+    fun compose(
+        type: MessageType,
+        text: String,
+        srcLang: String,
+        isAlert: Boolean = false
+    ): ITantraMessage {
+        val identity = identityManager.getCurrentIdentity()
+            ?: identityManager.getOrCreateIdentity("User")
+        return ITantraMessage(
+            v = 1,
+            msgId = UUID.randomUUID().toString(),
+            type = if (isAlert) MessageType.ALERT else type,
+            srcLang = srcLang,
+            text = text,
+            senderName = identity.displayName,
+            senderId = myPeerId,
+            deviceModel = identity.deviceModel,
+            isAlert = isAlert,
+            ts = System.currentTimeMillis()
+        )
+    }
+
+    /**
+     * Sends [message] to one peer, Noise-encrypted end to end.
+     *
+     * Every conversation is private; there is no "encrypt this one" switch, because a
+     * message addressed to a person was always meant for that person. If no session exists
+     * yet the transport holds the message until one does, and [deliveryUpdates] reports it
+     * as SENT, then DELIVERED — or FAILED if the recipient never answers.
+     *
+     * @return false only when the mesh is not running at all.
+     */
+    fun sendPrivate(message: ITantraMessage, recipientPeerId: String): Boolean {
         val service = meshService ?: return false
-
         return try {
-            // Encode the payload with iTantra wire header
-            val wireBytes = ITantraMeshPayloadCodec.encode(message)
-            val wireString = String(wireBytes, Charsets.UTF_8)
-
-            when {
-                recipientPeerId != null -> {
-                    service.sendPrivateMessage(
-                        content = wireString,
-                        recipientPeerID = recipientPeerId,
-                        recipientNickname = "peer"
-                    )
-                    Log.d(TAG, "Sent Noise-encrypted message to $recipientPeerId: msgId=${message.msgId}")
-                }
-
-                secure -> {
-                    // Fan out as individual private messages so every copy is Noise
-                    // encrypted end-to-end. Costs a handshake per peer and cannot reach
-                    // peers we have no session with — that is the trade for confidentiality.
-                    val peers = _connectedPeers.value
-                    if (peers.isEmpty()) {
-                        Log.w(TAG, "Secure send requested with no connected peers; message not transmitted")
-                        return false
-                    }
-                    for (peer in peers) {
-                        service.sendPrivateMessage(
-                            content = wireString,
-                            recipientPeerID = peer.peerId,
-                            recipientNickname = peer.name.ifEmpty { "peer" }
-                        )
-                    }
-                    Log.d(TAG, "Sent Noise-encrypted message to ${peers.size} peers: msgId=${message.msgId}")
-                }
-
-                else -> {
-                    // Public mesh broadcast: signed and relayed up to 7 hops, but the
-                    // payload is readable by any node on the mesh.
-                    service.sendMessage(content = wireString)
-                    Log.d(TAG, "Broadcast message (signed, not encrypted): msgId=${message.msgId}")
-                }
-            }
-            Log.d(TAG, "Sent message: msgId=${message.msgId}, type=${message.type}, secure=$secure")
+            val wire = String(ITantraMeshPayloadCodec.encode(message), Charsets.UTF_8)
+            // The payload's own msgId doubles as the transport message id, so the
+            // recipient's delivery ack names the message it acknowledges.
+            service.sendPrivateMessage(
+                content = wire,
+                recipientPeerID = recipientPeerId,
+                recipientNickname = "peer",
+                messageID = message.msgId
+            )
+            Log.d(TAG, "Queued private ${message.type} ${message.msgId} for $recipientPeerId")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to send message: ${e.message}", e)
+            Log.e(TAG, "Failed to send private message: ${e.message}", e)
             false
         }
     }
 
     /**
-     * Convenience method to send speech-derived text.
+     * Public, signed, unencrypted broadcast. Only distress traffic goes this way: an SOS
+     * that only phones holding a session with the sender could read would defeat itself.
      */
-    fun sendVoiceText(
-        text: String,
-        srcLang: String = "hi",
-        isAlert: Boolean = false,
-        recipientPeerId: String? = null,
-        secure: Boolean = false
-    ): ITantraMessage? {
-        val identity = identityManager.getCurrentIdentity()
-            ?: identityManager.getOrCreateIdentity("User")
-
-        val message = ITantraMessage(
-            v = 1,
-            msgId = UUID.randomUUID().toString(),
-            type = if (isAlert) MessageType.ALERT else MessageType.VOICE_TEXT,
-            srcLang = srcLang,
-            text = text,
-            senderName = identity.displayName,
-            senderId = identity.peerId,
-            deviceModel = identity.deviceModel,
-            isAlert = isAlert,
-            ts = System.currentTimeMillis()
-        )
-
-        val success = sendMessage(message, recipientPeerId, secure)
-        return if (success) message else null
-    }
-
-    /**
-     * Convenience method to send typed text.
-     */
-    fun sendTypedText(
-        text: String,
-        srcLang: String = "hi",
-        isAlert: Boolean = false,
-        recipientPeerId: String? = null,
-        secure: Boolean = false
-    ): ITantraMessage? {
-        val identity = identityManager.getCurrentIdentity()
-            ?: identityManager.getOrCreateIdentity("User")
-
-        val message = ITantraMessage(
-            v = 1,
-            msgId = UUID.randomUUID().toString(),
-            type = if (isAlert) MessageType.ALERT else MessageType.TYPED_TEXT,
-            srcLang = srcLang,
-            text = text,
-            senderName = identity.displayName,
-            senderId = identity.peerId,
-            deviceModel = identity.deviceModel,
-            isAlert = isAlert,
-            ts = System.currentTimeMillis()
-        )
-
-        val success = sendMessage(message, recipientPeerId, secure)
-        return if (success) message else null
+    private fun broadcast(message: ITantraMessage): Boolean {
+        val service = meshService ?: return false
+        return try {
+            service.sendMessage(content = String(ITantraMeshPayloadCodec.encode(message), Charsets.UTF_8))
+            Log.d(TAG, "Broadcast ${message.type} ${message.msgId} (signed, not encrypted)")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to broadcast: ${e.message}", e)
+            false
+        }
     }
 
     /**
@@ -265,7 +243,7 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
             srcLang = srcLang,
             text = text,
             senderName = identity.displayName,
-            senderId = identity.peerId,
+            senderId = myPeerId,
             deviceModel = identity.deviceModel,
             isAlert = true,
             ts = System.currentTimeMillis(),
@@ -275,13 +253,13 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
             expiresAt = expiresAt
         )
 
-        return if (sendMessage(message, recipientPeerId = null, secure = false)) message else null
+        return if (broadcast(message)) message else null
     }
 
     /** Re-broadcasts an announcement this device is holding, unchanged. */
     fun rebroadcastSos(message: ITantraMessage): Boolean {
         if (message.isExpired()) return false
-        return sendMessage(message, recipientPeerId = null, secure = false)
+        return broadcast(message)
     }
 
     /** Tells the mesh that [original] has been resolved and must stop propagating. */
@@ -296,27 +274,28 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
             srcLang = original.srcLang,
             text = "Resolved",
             senderName = identity.displayName,
-            senderId = identity.peerId,
+            senderId = myPeerId,
             deviceModel = identity.deviceModel,
             ts = System.currentTimeMillis(),
             refMsgId = original.msgId
         )
-        return sendMessage(message, recipientPeerId = null, secure = false)
+        return broadcast(message)
     }
 
     // --- BluetoothMeshDelegate implementation ---
 
     override fun didReceiveMessage(message: BitchatMessage) {
         val payloadBytes = message.content.toByteArray(Charsets.UTF_8)
-        val decoded = ITantraMeshPayloadCodec.decode(
+        val parsed = ITantraMeshPayloadCodec.decode(
             payloadBytes = payloadBytes,
             fallbackSenderId = message.senderPeerID ?: message.sender,
             fallbackSenderName = message.sender
         )
 
-        if (decoded == null) return
+            ?: return
+        val decoded = attribute(parsed, message.senderPeerID)
 
-        Log.d(TAG, "Decoded incoming ITantraMessage from ${decoded.senderName} (${decoded.deviceModel}): ${decoded.text}")
+        Log.d(TAG, "Received ${decoded.type} ${decoded.msgId} from ${decoded.senderName} (${decoded.senderId.take(8)})")
 
         // Expired distress announcements are dropped rather than shown or relayed.
         if (decoded.isExpired()) {
@@ -342,6 +321,23 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
         }
     }
 
+    /**
+     * Files a message under the peer the transport authenticated, not the one the payload
+     * claims. The payload's `senderId` is self-asserted JSON; the transport's sender is
+     * bound to a Noise session or a verified announcement signature.
+     *
+     * Distress announcements are the exception: a phone relaying someone else's SOS
+     * re-broadcasts it unchanged, so the transport sender is the relay, and the payload is
+     * the only record of who is actually in trouble.
+     */
+    private fun attribute(message: ITantraMessage, transportSender: String?): ITantraMessage {
+        if (transportSender.isNullOrBlank() || message.type == MessageType.SOS) return message
+        if (message.senderId != transportSender) {
+            Log.d(TAG, "Attributing ${message.msgId} to transport sender ${transportSender.take(8)}")
+        }
+        return message.copy(senderId = transportSender)
+    }
+
     /** Hops to [peerId] from the gossip graph, or null when it cannot be determined. */
     private fun senderHops(peerId: String): Int? = try {
         _connectedPeers.value.firstOrNull { it.peerId == peerId }?.hops
@@ -359,6 +355,15 @@ class ITantraMeshManager(private val context: Context) : MeshDelegate {
 
     override fun didReceiveDeliveryAck(messageID: String, recipientPeerID: String) {
         Log.d(TAG, "Delivery ack received for message $messageID from $recipientPeerID")
+        _deliveryUpdates.tryEmit(DeliveryUpdate(messageID, recipientPeerID, Delivery.DELIVERED))
+    }
+
+    override fun didSendPrivateMessage(messageID: String, recipientPeerID: String) {
+        _deliveryUpdates.tryEmit(DeliveryUpdate(messageID, recipientPeerID, Delivery.SENT))
+    }
+
+    override fun didDropPrivateMessage(messageID: String, recipientPeerID: String) {
+        _deliveryUpdates.tryEmit(DeliveryUpdate(messageID, recipientPeerID, Delivery.FAILED))
     }
 
     override fun didReceiveReadReceipt(messageID: String, recipientPeerID: String) {

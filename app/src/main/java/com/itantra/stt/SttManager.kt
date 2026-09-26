@@ -43,6 +43,15 @@ class SttManager(private val context: Context) {
         private const val MAX_UTTERANCE_SAMPLES = AudioCapture.SAMPLE_RATE * 30
     }
 
+    /**
+     * One recognised utterance, with what it cost: [audioMs] of speech took
+     * [inferenceMs] to transcribe on this phone.
+     */
+    data class Transcript(val text: String, val audioMs: Long, val inferenceMs: Long) {
+        /** Real-time factor: below 1 means faster than the speech itself. */
+        val realTimeFactor: Float get() = if (audioMs > 0) inferenceMs.toFloat() / audioMs else 0f
+    }
+
     sealed interface State {
         data object Idle : State
         /** [speech] is true while the VAD believes the user is talking. */
@@ -55,6 +64,9 @@ class SttManager(private val context: Context) {
     private val store = ModelStore(context)
     private val capture = AudioCapture()
     private val loadLock = Mutex()
+
+    /** Held for the whole of an inference, so [release] cannot close a session mid-run. */
+    private val useLock = Mutex()
 
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
@@ -198,9 +210,9 @@ class SttManager(private val context: Context) {
     /**
      * Ends the utterance and transcribes what was captured.
      *
-     * @return recognised text, or null when nothing usable was heard.
+     * @return the recognised utterance, or null when nothing usable was heard.
      */
-    suspend fun stopAndTranscribe(lang: String): String? {
+    suspend fun stopAndTranscribe(lang: String): Transcript? {
         captureJob?.cancelAndJoin()
         captureJob = null
 
@@ -222,17 +234,24 @@ class SttManager(private val context: Context) {
         }
 
         _state.value = State.Transcribing
+        val audioMs = samples.size * 1000L / AudioCapture.SAMPLE_RATE
+        val started = android.os.SystemClock.elapsedRealtime()
         val text = try {
-            val active = engineFor(lang) ?: return null
-            withContext(Dispatchers.Default) { active.transcribe(samples) }
+            useLock.withLock {
+                val active = engineFor(lang) ?: return null
+                withContext(Dispatchers.Default) { active.transcribe(samples) }
+            }
         } catch (e: Throwable) {
             Log.e(TAG, "TRANSCRIBE_FAILED[$lang]: ${e.javaClass.simpleName}: ${e.message}", e)
             null
         } finally {
             settle()
         }
+        val inferenceMs = android.os.SystemClock.elapsedRealtime() - started
 
-        return text?.takeIf { it.isNotBlank() }
+        val heard = text?.takeIf { it.isNotBlank() } ?: return null
+        Log.i(TAG, "Transcribed ${audioMs}ms of [$lang] speech in ${inferenceMs}ms")
+        return Transcript(heard, audioMs, inferenceMs)
     }
 
     /** Aborts the current utterance without transcribing. */
@@ -255,15 +274,22 @@ class SttManager(private val context: Context) {
         if (_state.value !is State.Unavailable) _state.value = State.Idle
     }
 
-    /** Frees model memory. Call when the transceiver screen goes away. */
+    /**
+     * Frees model memory. Safe at any moment: capture is stopped first, and a
+     * transcription in flight finishes before its session is closed. The next utterance
+     * reloads lazily.
+     */
     fun release() {
         scope.launch {
-            loadLock.withLock {
+            captureJob?.cancelAndJoin()
+            captureJob = null
+            useLock.withLock { loadLock.withLock {
                 runCatching { engine?.close() }
                 engine = null
                 runCatching { vad?.close() }
                 vad = null
-            }
+            } }
+            settle()
         }
     }
 }

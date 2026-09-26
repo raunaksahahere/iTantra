@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.itantra.models.ModelStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,6 +65,12 @@ class TranslationManager(private val context: Context) {
     private val store = ModelStore(context)
     private val loadLock = Mutex()
 
+    /** Held while an engine is translating, so [release] cannot close it mid-run. */
+    private val useLock = Mutex()
+    private val scope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + Dispatchers.Default
+    )
+
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -104,15 +111,16 @@ class TranslationManager(private val context: Context) {
             return Outcome.Failed(text, reason)
         }
 
-        val engine = engineFor(source, target)
-            ?: return Outcome.Failed(
-                text,
-                TranslationUnavailable.LoadFailed("$source->$target", "engine unavailable")
-            )
-
-        _state.value = State.Translating("$source->$target")
         val started = System.currentTimeMillis()
-        val translated = withContext(Dispatchers.Default) { engine.translate(text) }
+        val translated = useLock.withLock {
+            val engine = engineFor(source, target)
+                ?: return Outcome.Failed(
+                    text,
+                    TranslationUnavailable.LoadFailed("$source->$target", "engine unavailable")
+                )
+            _state.value = State.Translating("$source->$target")
+            withContext(Dispatchers.Default) { engine.translate(text) }
+        }
         val elapsed = System.currentTimeMillis() - started
         _state.value = State.Idle
 
@@ -165,9 +173,16 @@ class TranslationManager(private val context: Context) {
             )
         }
 
+    /** Frees the loaded direction once any translation in flight has finished. */
     fun release() {
-        engine?.let { runCatching { it.close() } }
-        engine = null
-        _state.value = State.Idle
+        scope.launch {
+            useLock.withLock {
+                loadLock.withLock {
+                    engine?.let { runCatching { it.close() } }
+                    engine = null
+                }
+            }
+            _state.value = State.Idle
+        }
     }
 }
