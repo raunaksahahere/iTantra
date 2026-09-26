@@ -1,5 +1,8 @@
 # Project-specific
-docs/
+# Planning docs stay local, except the tracker, which is the shared record of what is
+# done and what still needs hardware. (A bare "docs/" could not be re-included from.)
+docs/*
+!docs/Tracker.md
 reference-repo/
 
 # Gradle
