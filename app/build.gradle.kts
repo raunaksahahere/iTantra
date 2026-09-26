@@ -1,4 +1,17 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+/**
+ * Release signing, read from an untracked keystore.properties (Rules §21) with keys
+ * storeFile, storePassword, keyAlias, keyPassword. Without it, release builds come out
+ * unsigned rather than failing.
+ */
+val keystoreProperties = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { f ->
+    Properties().apply { f.inputStream().use { load(it) } }
+}
+
+/** Directory holding indic-en/ and en-indic/ model exports, for the opt-in MT test. */
+val mtModels: String? = providers.gradleProperty("mtModels").orNull
 
 plugins {
     alias(libs.plugins.android.application)
@@ -24,6 +37,17 @@ android {
         }
     }
 
+    signingConfigs {
+        keystoreProperties?.let { props ->
+            create("release") {
+                storeFile = rootProject.file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -35,6 +59,10 @@ android {
             }
         }
         release {
+            signingConfig = signingConfigs.findByName("release")
+            // Same reasoning as debug: the x86 runtimes serve only emulators, which cannot
+            // run the mesh.
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -64,6 +92,12 @@ android {
         // android.util.Log and friends return defaults instead of throwing, so plain JVM
         // tests can exercise code that logs.
         unitTests.isReturnDefaultValues = true
+        unitTests.all { test ->
+            // Opt-in end-to-end translation test against the real models; see
+            // IndicTrans2DesktopTest. Skipped unless -PmtModels=<dir> is given.
+            mtModels?.let { test.systemProperty("itantra.mtModels", it) }
+            test.maxHeapSize = "2g"
+        }
     }
 
     lint {
@@ -126,6 +160,7 @@ dependencies {
 
     // Testing
     testImplementation(libs.bundles.testing)
+    if (mtModels != null) testImplementation(libs.onnxruntime.jvm)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.bundles.compose.testing)
     debugImplementation(libs.androidx.compose.ui.tooling)

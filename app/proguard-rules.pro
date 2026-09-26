@@ -10,3 +10,14 @@
 
 -keep class com.itantra.schema.** { *; }
 -keep class com.itantra.mesh.** { *; }
+
+# ONNX Runtime's JNI layer constructs and calls these classes by name (OnnxTensor,
+# OrtException, OrtSession.Result, ...). The AAR ships no consumer rules, so without this
+# R8 would rename them and the native lookups would fail at the first inference.
+-keep class ai.onnxruntime.** { *; }
+
+# Conversation history is written with Gson by field name. Obfuscated names would change
+# between releases and make every saved history unreadable after an update. Gson also needs
+# the generic signatures to read List<Conversation> back, which R8 full mode strips.
+-keepattributes Signature
+-keep class com.itantra.conversation.** { <fields>; <init>(...); }
