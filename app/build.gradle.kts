@@ -60,15 +60,25 @@ android {
         }
         release {
             signingConfig = signingConfigs.findByName("release")
-            // Same reasoning as debug: the x86 runtimes serve only emulators, which cannot
-            // run the mesh.
-            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+
+    // Release APKs are split per CPU architecture: ONNX Runtime is most of the APK and a
+    // phone only runs its own copy, so each split is roughly half the universal size —
+    // which matters when the app itself is passed phone to phone over Bluetooth. x86 is
+    // left out as for debug: emulators cannot run the mesh. Debug stays one APK.
+    splits {
+        abi {
+            isEnable = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
         }
     }
 
@@ -85,6 +95,10 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        // Emulator-only runtimes, out of every APK including the universal split.
+        jniLibs {
+            excludes += listOf("lib/x86/**", "lib/x86_64/**")
         }
     }
 
