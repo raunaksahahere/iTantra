@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
@@ -81,6 +82,18 @@ class MainActivity : ComponentActivity() {
                         mutableStateOf(
                             if (identityManager.hasIdentity()) AppScreen.HOME else AppScreen.ONBOARDING
                         )
+                    }
+
+                    // System back walks the app's own screens instead of closing it: from a
+                    // chat or Language Packs it returns where the user came from, and only
+                    // HOME hands back to the launcher.
+                    BackHandler(enabled = currentScreen == AppScreen.PEER_CHAT || currentScreen == AppScreen.LANGUAGES) {
+                        currentScreen = if (currentScreen == AppScreen.LANGUAGES && activePeer != null) {
+                            AppScreen.PEER_CHAT
+                        } else {
+                            activePeer = null
+                            AppScreen.HOME
+                        }
                     }
 
                     when (currentScreen) {

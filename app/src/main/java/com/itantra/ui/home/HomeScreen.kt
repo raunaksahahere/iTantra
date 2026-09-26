@@ -85,6 +85,9 @@ fun HomeScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // Android 15 draws apps edge to edge: without this the title and its
+                    // buttons sit under the status bar, which swallows taps on them.
+                    .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -143,7 +146,10 @@ fun HomeScreen(
         if (filtered.isEmpty() && earlier.isEmpty()) {
             EmptyPeers(hasPeers = peers.isNotEmpty() || conversations.isNotEmpty(), query = query)
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = WindowInsets.navigationBars.asPaddingValues()
+            ) {
                 if (filtered.isEmpty()) {
                     item { SectionLabel("Nobody in range right now") }
                 }

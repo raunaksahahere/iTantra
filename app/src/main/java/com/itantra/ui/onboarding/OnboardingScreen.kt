@@ -37,6 +37,8 @@ fun OnboardingScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(SurfaceBg)
+            .systemBarsPadding()
+            .imePadding()
             .padding(24.dp)
     ) {
         Column(
